@@ -1,0 +1,475 @@
+{% extends "doctor/base.html" %}
+
+{% block page_title %}Assessment History{% endblock %}
+{% block page_header %}Assessment History{% endblock %}
+
+{% block content %}
+<div class="page-actions">
+    <a href="{{ url_for('doctor_dashboard.mothers', doctor_id=doctor_id) }}" class="btn btn-secondary"><i class="fa-solid fa-arrow-left"></i> Back to Patients</a>
+    <button class="btn btn-sakura" onclick="loadAssessments()"><i class="fa-solid fa-rotate"></i> Refresh</button>
+</div>
+
+<!-- Mother Info Card -->
+<div class="info-card" id="mother-info" style="display: none;">
+    <h4>Patient Information</h4>
+    <div id="mother-details"></div>
+</div>
+
+<!-- Assessments List -->
+<div id="assessments-container">
+    <p class="text-center">Loading assessments...</p>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const MOTHER_ID = "{{ mother_id }}";
+let assessmentsData = [];
+
+if (!DOCTOR_ID || !MOTHER_ID) {
+    showAlert('Missing doctor_id or mother_id in URL', 'error');
+}
+
+// Load assessments
+async function loadAssessments() {
+    if (!DOCTOR_ID || !MOTHER_ID) return;
+    
+    try {
+        const response = await fetch(`/doctor/assessments?doctor_id=${DOCTOR_ID}&mother_id=${MOTHER_ID}`);
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to load assessments');
+        }
+        
+        // Show mother info
+        if (data.mother_info) {
+            showMotherInfo(data.mother_info);
+        }
+        
+        assessmentsData = data.assessments || [];
+        renderAssessments();
+        updateTimestamp();
+        
+    } catch (error) {
+        console.error('Failed to load assessments:', error);
+        showAlert('Failed to load assessments: ' + error.message, 'error');
+    }
+}
+
+// Show mother information
+function showMotherInfo(mother) {
+    document.getElementById('mother-details').innerHTML = `
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;">
+            <div><strong>Name:</strong> ${mother.name}</div>
+            <div><strong>Age:</strong> ${mother.age} years</div>
+            <div><strong>Phone:</strong> ${mother.phone}</div>
+            <div><strong>Gestational Age:</strong> ${mother.gestational_age_weeks || 'N/A'} weeks</div>
+            <div><strong>EDD:</strong> ${mother.edd ? new Date(mother.edd).toLocaleDateString() : 'N/A'}</div>
+            <div><strong>Village:</strong> ${mother.village || 'N/A'}</div>
+        </div>
+    `;
+    document.getElementById('mother-info').style.display = 'block';
+}
+
+// Render assessments
+function renderAssessments() {
+    const container = document.getElementById('assessments-container');
+    
+    if (assessmentsData.length === 0) {
+        container.innerHTML = `
+            <div style="text-align: center; padding: 4rem 2rem; background: var(--card-bg); border-radius: var(--card-radius); box-shadow: var(--card-shadow);">
+                <div style="font-size: 4rem; margin-bottom: 1rem; color: var(--text-secondary);"><i class="fa-solid fa-clipboard-list"></i></div>
+                <h3 style="margin: 0 0 1rem 0; color: var(--fuji-700);">No Assessments Found</h3>
+                <p style="margin: 0; color: var(--text-secondary);">This patient doesn't have any health assessments yet.</p>
+                <p style="margin: 0.5rem 0 0 0; color: var(--text-secondary);">Assessments will appear here once the ASHA worker submits them.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = assessmentsData.map(assessment => {
+        const aiEval = assessment.ai_evaluation || {};
+        const riskLevel = aiEval.risk_category || 'N/A';
+        const riskClass = getRiskClass(riskLevel);
+        const riskBadge = `<span class="badge badge-${riskClass}">${riskLevel}</span>`;
+        const reviewBadge = assessment.doctor_reviewed
+            ? '<span class="badge badge-success">Reviewed</span>'
+            : '<span class="badge badge-warning">Not Reviewed</span>';
+        
+        const date = new Date(assessment.timestamp).toLocaleString();
+        const vitals = assessment.vitals || {};
+        const symptoms = assessment.symptoms || [];
+        const recommendations = aiEval.recommended_actions || [];
+        
+        // 🔧 IMPROVEMENT 5: Add emergency highlight for HIGH/CRITICAL risk
+        const emergencyClass = (riskLevel === 'HIGH' || riskLevel === 'CRITICAL') 
+            ? 'style="border-left: 4px solid #dc3545; background: #fff5f5;"' 
+            : '';
+        
+        // 🔧 IMPROVEMENT 1: Extract ASHA context
+        const ashaName = assessment.asha_name || 'ASHA Worker';
+        const gestationalWeekAtAssessment = assessment.gestational_age_weeks || 'N/A';
+        
+        return `
+            <div class="table-card" ${emergencyClass} style="margin-bottom: 1.5rem; position: relative;">
+                ${(riskLevel === 'HIGH' || riskLevel === 'CRITICAL') ? `
+                    <div style="position: absolute; top: 10px; right: 10px; background: var(--critical-color); color: white; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600;">
+                        <i class="fa-solid fa-triangle-exclamation"></i> Urgent Review Required
+                    </div>
+                ` : ''}
+                
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h4>Assessment ${assessment.assessment_number || '#'} - ${date}</h4>
+                    <div>${riskBadge} ${reviewBadge}</div>
+                </div>
+                
+                <!-- 🔧 IMPROVEMENT 1: ASHA Context -->
+                <div style="background: #f8f9fa; padding: 0.75rem; border-radius: 4px; margin-bottom: 1rem; border-left: 3px solid #28a745;">
+                    <strong>Submitted by ASHA:</strong> ${ashaName} &nbsp;|&nbsp; 
+                    <strong>Gestational Week at Assessment:</strong> ${gestationalWeekAtAssessment} weeks
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                    <div>
+                        <h5>Vitals</h5>
+                        <ul style="margin: 0; padding-left: 1.5rem;">
+                            <li>BP: ${vitals.bp_systolic || 'N/A'}/${vitals.bp_diastolic || 'N/A'} mmHg</li>
+                            <li>Heart Rate: ${vitals.heart_rate || 'N/A'} bpm</li>
+                            <li>Weight: ${vitals.weight_kg || 'N/A'} kg</li>
+                            ${vitals.glucose_mg_dl ? `<li>Glucose: ${vitals.glucose_mg_dl} mg/dL</li>` : ''}
+                            ${vitals.hemoglobin_g_dl ? `<li>Hemoglobin: ${vitals.hemoglobin_g_dl} g/dL</li>` : ''}
+                        </ul>
+                        
+                        <h5 style="margin-top: 1rem;">Symptoms</h5>
+                        ${symptoms.length > 0 
+                            ? `<ul style="margin: 0; padding-left: 1.5rem;">${symptoms.map(s => `<li>${s}</li>`).join('')}</ul>`
+                            : '<p>No symptoms reported</p>'
+                        }
+                        
+                        ${assessment.asha_notes ? `
+                            <h5 style="margin-top: 1rem;">ASHA Notes</h5>
+                            <p>${assessment.asha_notes}</p>
+                        ` : ''}
+                    </div>
+                    
+                    <div>
+                        <h5>AI Risk Summary</h5>
+                        <p><strong>Risk Score:</strong> ${aiEval.risk_score || 'N/A'}/100</p>
+                        
+                        <!-- 🔧 IMPROVEMENT 2: Handle Confidence gracefully -->
+                        ${aiEval.confidence 
+                            ? `<p><strong>Confidence:</strong> ${(aiEval.confidence * 100).toFixed(1)}%</p>`
+                            : `<p><strong>Confidence:</strong> <span style="color: #6c757d; font-style: italic;">Not available (AI partial analysis)</span></p>`
+                        }
+                        
+                        ${recommendations.length > 0 ? `
+                            <h5 style="margin-top: 1rem;">AI Recommendations</h5>
+                            <ul style="margin: 0; padding-left: 1.5rem;">
+                                ${recommendations.map(r => `<li>${formatRecommendedAction(r)}</li>`).join('')}
+                            </ul>
+                        ` : ''}
+                        
+                        <!-- 🔧 IMPROVEMENT 3: Add AI Reasoning (Collapsible) -->
+                        ${(aiEval.agent_outputs || aiEval.reasoning) ? `
+                            <div style="margin-top: 1rem;">
+                                <button onclick="toggleReasoning('${assessment.assessment_id}')" 
+                                        class="btn btn-secondary" 
+                                        style="font-size: 0.9rem; padding: 0.4rem 0.8rem;">
+                                    <span id="reasoning-toggle-${assessment.assessment_id}"><i class="fa-solid fa-magnifying-glass-chart"></i> View AI Reasoning</span>
+                                </button>
+                                <div id="reasoning-${assessment.assessment_id}" style="display: none; margin-top: 0.5rem; padding: 0.75rem; background: #f8f9fa; border-radius: 4px; font-size: 0.9rem;">
+                                    ${formatAIReasoning(aiEval)}
+                                </div>
+                            </div>
+                        ` : ''}
+                        
+                        ${assessment.doctor_consultation ? `
+                            <h5 style="margin-top: 1rem;">Doctor's Consultation</h5>
+                            <p><strong>Diagnosis:</strong> ${assessment.doctor_consultation.diagnosis}</p>
+                            <p><strong>Treatment:</strong> ${assessment.doctor_consultation.treatment_plan}</p>
+                        ` : ''}
+                    </div>
+                </div>
+                
+                <!-- 🔧 IMPROVEMENT 4: Review Status UX -->
+                <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                    ${assessment.doctor_reviewed ? `
+                        ${assessment.doctor_consultation ? `
+                            <a href="{{ url_for('doctor_dashboard.consultation_view', doctor_id=doctor_id) }}&assessment_id=${assessment.assessment_id}" 
+                               class="btn btn-sakura"><i class="fa-solid fa-file-medical"></i> View Consultation</a>
+                        ` : ''}
+                    ` : `
+                        <a href="{{ url_for('doctor_dashboard.consultation_form', doctor_id=doctor_id) }}&assessment_id=${assessment.assessment_id}" 
+                           class="btn btn-sakura" id="consult-btn-${assessment.assessment_id}"><i class="fa-solid fa-stethoscope"></i> Create Consultation</a>
+                    `}
+                    <button class="btn btn-secondary" onclick="viewFullDetails('${assessment.assessment_id}')"><i class="fa-solid fa-list-ul"></i> View Full Details</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// View full assessment details
+function viewFullDetails(assessmentId) {
+    const assessment = assessmentsData.find(a => a.assessment_id === assessmentId);
+    if (!assessment) return;
+    
+    // Create modal HTML
+    const modalHTML = `
+        <div class="modal" id="fullDetailsModal" style="display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center;">
+            <div style="background: white; padding: 30px; border-radius: 12px; max-width: 900px; max-height: 90vh; overflow-y: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid var(--fuji-700); padding-bottom: 15px;">
+                    <h2 style="margin: 0; color: var(--fuji-700);"><i class="fa-solid fa-clipboard-list"></i> Full Assessment Details</h2>
+                    <button onclick="closeFullDetailsModal()" style="background: var(--critical-color); color: white; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer; font-size: 16px; font-weight: bold;"><i class="fa-solid fa-xmark"></i> Close</button>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <!-- Patient Info -->
+                    <div style="background: rgba(30, 58, 95, 0.05); padding: 15px; border-radius: 8px;">
+                        <h3 style="margin-top: 0; color: var(--fuji-700);"><i class="fa-solid fa-user"></i> Patient Information</h3>
+                        <p><strong>Assessment ID:</strong> ${assessment.assessment_id}</p>
+                        <p><strong>Date:</strong> ${new Date(assessment.date).toLocaleString()}</p>
+                        <p><strong>Gestational Week:</strong> ${assessment.gestational_week} weeks</p>
+                        <p><strong>ASHA Worker:</strong> ${assessment.submitted_by_asha || 'N/A'}</p>
+                    </div>
+                    
+                    <!-- Vitals -->
+                    <div style="background: rgba(16, 185, 129, 0.05); padding: 15px; border-radius: 8px;">
+                        <h3 style="margin-top: 0; color: #059669;"><i class="fa-solid fa-stethoscope"></i> Vital Signs</h3>
+                        <p><strong>BP:</strong> ${assessment.vitals?.bp_systolic || 'N/A'}/${assessment.vitals?.bp_diastolic || 'N/A'} mmHg</p>
+                        <p><strong>Heart Rate:</strong> ${assessment.vitals?.heart_rate || 'N/A'} bpm</p>
+                        <p><strong>Hemoglobin:</strong> ${assessment.vitals?.hemoglobin || 'N/A'} g/dL</p>
+                        <p><strong>Glucose:</strong> ${assessment.vitals?.blood_glucose_random || 'N/A'} mg/dL</p>
+                        <p><strong>Weight:</strong> ${assessment.vitals?.weight || 'N/A'} kg</p>
+                        <p><strong>Temperature:</strong> ${assessment.vitals?.temperature || 'N/A'} °F</p>
+                    </div>
+                    
+                    <!-- Symptoms -->
+                    <div style="background: rgba(245, 158, 11, 0.05); padding: 15px; border-radius: 8px;">
+                        <h3 style="margin-top: 0; color: #92400e;"><i class="fa-solid fa-headside-mask"></i> Symptoms</h3>
+                        ${assessment.symptoms && assessment.symptoms.length > 0 
+                            ? '<ul style="margin: 5px 0; padding-left: 20px;">' + assessment.symptoms.map(s => `<li>${s}</li>`).join('') + '</ul>'
+                            : '<p>No symptoms reported</p>'}
+                    </div>
+                    
+                    <!-- Risk Factors -->
+                    <div style="background: rgba(239, 68, 68, 0.05); padding: 15px; border-radius: 8px;">
+                        <h3 style="margin-top: 0; color: #991b1b;"><i class="fa-solid fa-triangle-exclamation"></i> Risk Factors</h3>
+                        ${assessment.risk_factors && assessment.risk_factors.length > 0 
+                            ? '<ul style="margin: 5px 0; padding-left: 20px;">' + assessment.risk_factors.map(r => `<li>${r}</li>`).join('') + '</ul>'
+                            : '<p>No risk factors noted</p>'}
+                    </div>
+                </div>
+                
+                <!-- AI Analysis -->
+                <div style="margin-top: 20px; background: rgba(59, 130, 246, 0.05); padding: 20px; border-radius: 8px; border-left: 4px solid var(--fuji-500);">
+                    <h3 style="margin-top: 0; color: var(--fuji-600);"><i class="fa-solid fa-robot"></i> AI Risk Assessment</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                        <div style="background: white; padding: 12px; border-radius: 6px; text-align: center;">
+                            <div style="font-size: 12px; color: #7f8c8d; margin-bottom: 5px;">Risk Level</div>
+                            <div style="font-size: 20px; font-weight: bold; color: ${assessment.ai_evaluation?.risk_level === 'HIGH' || assessment.ai_evaluation?.risk_level === 'CRITICAL' ? '#e74c3c' : assessment.ai_evaluation?.risk_level === 'MODERATE' ? '#f39c12' : '#27ae60'};">
+                                ${assessment.ai_evaluation?.risk_level || 'N/A'}
+                            </div>
+                        </div>
+                        <div style="background: white; padding: 12px; border-radius: 6px; text-align: center;">
+                            <div style="font-size: 12px; color: #7f8c8d; margin-bottom: 5px;">Risk Score</div>
+                            <div style="font-size: 20px; font-weight: bold; color: #34495e;">${assessment.ai_evaluation?.risk_score || 'N/A'}/100</div>
+                        </div>
+                        <div style="background: white; padding: 12px; border-radius: 6px; text-align: center;">
+                            <div style="font-size: 12px; color: #7f8c8d; margin-bottom: 5px;">Confidence</div>
+                            <div style="font-size: 20px; font-weight: bold; color: #34495e;">${assessment.ai_evaluation?.confidence ? (assessment.ai_evaluation.confidence * 100).toFixed(0) + '%' : 'N/A'}</div>
+                        </div>
+                    </div>
+                    
+                    ${formatAIReasoning(assessment.ai_evaluation?.agent_outputs || {})}
+                </div>
+                
+                <!-- Recommendations -->
+                <div style="margin-top: 20px; background: rgba(244, 114, 182, 0.05); padding: 20px; border-radius: 8px; border-left: 4px solid var(--sakura-pink);">
+                    <h3 style="margin-top: 0; color: var(--sakura-deep);"><i class="fa-solid fa-lightbulb"></i> Recommended Actions</h3>
+                    ${assessment.ai_evaluation?.recommended_actions && assessment.ai_evaluation.recommended_actions.length > 0
+                        ? '<ul style="margin: 5px 0; padding-left: 20px;">' + assessment.ai_evaluation.recommended_actions.map(action => `<li>${formatRecommendedAction(action)}</li>`).join('') + '</ul>'
+                        : '<p>No specific actions recommended</p>'}
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Add modal to page
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+}
+
+function closeFullDetailsModal() {
+    const modal = document.getElementById('fullDetailsModal');
+    if (modal) modal.remove();
+}
+
+// 🔧 IMPROVEMENT 3: Toggle AI Reasoning visibility
+function toggleReasoning(assessmentId) {
+    const reasoningDiv = document.getElementById(`reasoning-${assessmentId}`);
+    const toggleBtn = document.getElementById(`reasoning-toggle-${assessmentId}`);
+    
+    if (reasoningDiv.style.display === 'none') {
+        reasoningDiv.style.display = 'block';
+        toggleBtn.innerHTML = '<i class="fa-solid fa-eye-slash"></i> Hide AI Reasoning';
+    } else {
+        reasoningDiv.style.display = 'none';
+        toggleBtn.innerHTML = '<i class="fa-solid fa-magnifying-glass-chart"></i> View AI Reasoning';
+    }
+}
+
+// Format recommended action for better readability
+function formatRecommendedAction(action) {
+    const actionText = typeof action === 'string' ? action : (action.action || JSON.stringify(action));
+    
+    // Map action codes to human-readable text
+    const actionMap = {
+        'doctor_visit_24h': '<i class="fa-solid fa-hospital"></i> Schedule doctor visit within 24 hours',
+        'doctor_visit_immediately': '<i class="fa-solid fa-circle-exclamation"></i> Seek immediate medical attention',
+        'immediate_hospital_referral': '<i class="fa-solid fa-hospital"></i> Immediate hospital referral required',
+        'call_ambulance': '<i class="fa-solid fa-ambulance"></i> Call ambulance immediately',
+        'monitor_closely': '<i class="fa-solid fa-eye"></i> Monitor vitals closely and report changes',
+        'daily_bp_checks': '<i class="fa-solid fa-stethoscope"></i> Check blood pressure twice daily',
+        'doctor_visit_week': '<i class="fa-solid fa-calendar-day"></i> Schedule doctor appointment this week',
+        'continue_monitoring': '<i class="fa-solid fa-chart-line"></i> Continue regular monitoring',
+        'follow_care_plan': '<i class="fa-solid fa-clipboard-list"></i> Follow prescribed care plan',
+        'routine_checkup': '<i class="fa-solid fa-check"></i> Continue routine checkups',
+        'healthy_diet': '<i class="fa-solid fa-apple-whole"></i> Maintain healthy pregnancy diet',
+        'regular_exercise': '<i class="fa-solid fa-person-walking"></i> Light regular exercise as advised',
+        'rest_recommended': '<i class="fa-solid fa-bed"></i> Adequate rest recommended'
+    };
+    
+    return actionMap[actionText] || actionText.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+}
+
+// 🔧 IMPROVEMENT 3: Format AI Reasoning for display
+function formatAIReasoning(aiEval) {
+    if (!aiEval) return '<em>No AI evaluation available</em>';
+    
+    const reasoning = [];
+    
+    // Extract reasoning from agent_outputs (main AI orchestration results)
+    if (aiEval.agent_outputs) {
+        const outputs = aiEval.agent_outputs;
+        
+        // 🎯 Risk Stratification
+        if (outputs.risk_stratification) {
+            const risk = outputs.risk_stratification;
+            let riskText = '<strong><i class="fa-solid fa-bullseye"></i> Risk Stratification:</strong><br>';
+            if (risk.risk_level) riskText += `Level: ${risk.risk_level}<br>`;
+            if (risk.urgency) riskText += `Urgency: ${risk.urgency}<br>`;
+            if (risk.thresholds_exceeded && risk.thresholds_exceeded.length > 0) {
+                riskText += `Thresholds Exceeded: ${risk.thresholds_exceeded.join(', ')}<br>`;
+            }
+            if (risk.reasoning) riskText += `${risk.reasoning}`;
+            reasoning.push(riskText);
+        }
+        
+        // 💊 Symptom Reasoning
+        if (outputs.symptom_reasoning) {
+            const symptoms = outputs.symptom_reasoning;
+            let symptomText = '<strong><i class="fa-solid fa-capsules"></i> Symptom Reasoning:</strong><br>';
+            if (symptoms.clusters_detected && symptoms.clusters_detected.length > 0) {
+                symptomText += `Clusters Detected: ${symptoms.clusters_detected.join(', ')}<br>`;
+            }
+            if (symptoms.reasoning) symptomText += `${symptoms.reasoning}`;
+            reasoning.push(symptomText);
+        }
+        
+        // 📊 Trend Analysis
+        if (outputs.trend_analysis) {
+            const trends = outputs.trend_analysis;
+            let trendText = '<strong><i class="fa-solid fa-chart-column"></i> Trend Analysis:</strong><br>';
+            if (trends.trend_direction) trendText += `Direction: ${trends.trend_direction}<br>`;
+            if (trends.worsening_indicators && trends.worsening_indicators.length > 0) {
+                trendText += `Worsening: ${trends.worsening_indicators.join(', ')}<br>`;
+            }
+            if (trends.stable_indicators && trends.stable_indicators.length > 0) {
+                trendText += `Stable: ${trends.stable_indicators.join(', ')}<br>`;
+            }
+            if (trends.reasoning) trendText += `${trends.reasoning}`;
+            reasoning.push(trendText);
+        }
+        
+        // 📄 Document Analysis
+        if (outputs.document_analysis) {
+            const docs = outputs.document_analysis;
+            let docText = '<strong><i class="fa-solid fa-file-medical"></i> Document Analysis:</strong><br>';
+            if (docs.summary) docText += `${docs.summary}`;
+            reasoning.push(docText);
+        }
+        
+        // 🥗 Nutrition Summary
+        if (outputs.nutrition_lifestyle) {
+            const nutrition = outputs.nutrition_lifestyle;
+            let nutritionText = '<strong><i class="fa-solid fa-carrot"></i> Nutrition & Lifestyle:</strong><br>';
+            if (nutrition.recommendations && Array.isArray(nutrition.recommendations)) {
+                nutritionText += '<ul style="margin: 0.5rem 0;">';
+                nutrition.recommendations.forEach(rec => {
+                    nutritionText += `<li>${rec}</li>`;
+                });
+                nutritionText += '</ul>';
+            } else if (nutrition.summary) {
+                nutritionText += nutrition.summary;
+            }
+            reasoning.push(nutritionText);
+        }
+    }
+    
+    // Fallback to top-level reasoning fields
+    if (reasoning.length === 0 && aiEval.reasoning) {
+        reasoning.push(`<strong><i class="fa-solid fa-brain"></i> Analysis:</strong><br>${aiEval.reasoning}`);
+    }
+    
+    if (reasoning.length === 0 && aiEval.justification) {
+        reasoning.push(`<strong><i class="fa-solid fa-clipboard-check"></i> Justification:</strong><br>${aiEval.justification}`);
+    }
+    
+    return reasoning.length > 0 
+        ? reasoning.join('<br><br>') 
+        : '<em><i class="fa-solid fa-circle-info"></i> No detailed reasoning available</em>';
+}
+
+// 🔧 IMPROVEMENT 4: View consultation details
+function viewConsultation(assessmentId) {
+    const assessment = assessmentsData.find(a => a.assessment_id === assessmentId);
+    if (!assessment || !assessment.doctor_consultation) return;
+    
+    const consultation = assessment.doctor_consultation;
+    const modalContent = `
+        <div style="padding: 1rem;">
+            <h3>Consultation Details</h3>
+            <hr>
+            <p><strong>Diagnosis:</strong> ${consultation.diagnosis || 'N/A'}</p>
+            <p><strong>Observations:</strong> ${consultation.observations || 'N/A'}</p>
+            <p><strong>Treatment Plan:</strong> ${consultation.treatment_plan || 'N/A'}</p>
+            ${consultation.prescriptions ? `<p><strong>Prescriptions:</strong> ${consultation.prescriptions}</p>` : ''}
+            ${consultation.follow_up_date ? `<p><strong>Follow-up Date:</strong> ${new Date(consultation.follow_up_date).toLocaleDateString()}</p>` : ''}
+            <p><strong>Doctor:</strong> ${consultation.doctor_name || 'N/A'}</p>
+            <p><strong>Date:</strong> ${new Date(consultation.timestamp).toLocaleString()}</p>
+        </div>
+    `;
+    
+    // Simple alert for now - can be replaced with a proper modal
+    alert('Consultation Details:\n\n' + consultation.diagnosis + '\n\nTreatment: ' + consultation.treatment_plan);
+}
+
+// Get risk CSS class
+function getRiskClass(risk) {
+    const classes = {
+        'LOW': 'success',
+        'MODERATE': 'warning',
+        'HIGH': 'danger',
+        'CRITICAL': 'critical',
+        'N/A': 'secondary'
+    };
+    return classes[risk] || 'secondary';
+}
+
+// Load data on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadAssessments();
+});
+</script>
+{% endblock %}

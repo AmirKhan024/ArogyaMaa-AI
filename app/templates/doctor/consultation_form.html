@@ -1,0 +1,325 @@
+{% extends "doctor/base.html" %}
+
+{% block page_title %}Doctor Consultation{% endblock %}{% block page_header %}Create Consultation{% endblock %}
+{% block content %}
+<div class="page-actions">
+    <button class="btn btn-secondary" onclick="history.back()"><i class="fa-solid fa-arrow-left"></i> Back</button>
+</div>
+
+<!-- Patient Selection -->
+<div class="info-card" id="patient-selection-card" style="margin-bottom: 2rem;">
+    <h4>Select Patient</h4>
+    <div class="form-group" style="margin-bottom: 0;">
+        <select id="mother-select" class="form-control" onchange="handleMotherSelection()">
+            <option value="">-- Loading Patients... --</option>
+        </select>
+    </div>
+</div>
+
+<!-- Assessment Summary -->
+<div class="info-card" id="assessment-summary" style="display: none;">
+    <h4>Assessment Summary</h4>
+    <div id="assessment-details"></div>
+</div>
+
+<!-- Consultation Form -->
+<div class="table-card">
+    <h3 class="table-title">Doctor Consultation Form</h3>
+    
+    <form id="consultation-form" style="max-width: 800px; margin: 0 auto;">
+        <div class="form-group">
+            <label for="diagnosis">Diagnosis <span style="color: red;">*</span></label>
+            <textarea id="diagnosis" class="form-control" rows="3" required placeholder="Enter diagnosis..."></textarea>
+        </div>
+        
+        <div class="form-group">
+            <label for="clinical-observations">Clinical Observations</label>
+            <textarea id="clinical-observations" class="form-control" rows="3" placeholder="Any additional clinical observations..."></textarea>
+        </div>
+        
+        <h4 style="margin: 1.5rem 0 1rem;">Updated Vitals (Optional)</h4>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+                <label for="bp-systolic">Blood Pressure - Systolic (mmHg)</label>
+                <input type="number" id="bp-systolic" class="form-control" placeholder="120">
+            </div>
+            
+            <div class="form-group">
+                <label for="bp-diastolic">Blood Pressure - Diastolic (mmHg)</label>
+                <input type="number" id="bp-diastolic" class="form-control" placeholder="80">
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label for="treatment-plan">Treatment Plan <span style="color: red;">*</span></label>
+            <textarea id="treatment-plan" class="form-control" rows="4" required placeholder="Medications, procedures, recommendations..."></textarea>
+        </div>
+        
+        <div class="form-group">
+            <label for="next-visit-date">Next Visit Date</label>
+            <input type="date" id="next-visit-date" class="form-control">
+        </div>
+        
+        <div class="form-group">
+            <label>
+                <input type="checkbox" id="override-ai"> Override AI Risk Assessment?
+            </label>
+        </div>
+        
+        <div class="form-group" id="override-reason-group" style="display: none;">
+            <label for="override-reason">Override Reason <span style="color: red;">*</span></label>
+            <textarea id="override-reason" class="form-control" rows="2" placeholder="Explain why AI assessment is being overridden..."></textarea>
+        </div>
+        
+        <div class="form-group" id="override-risk-group" style="display: none;">
+            <label for="override-risk-level">Updated Risk Level <span style="color: red;">*</span></label>
+            <select id="override-risk-level" class="form-control">
+                <option value="">-- Select Risk Level --</option>
+                <option value="LOW">LOW</option>
+                <option value="MODERATE">MODERATE</option>
+                <option value="HIGH">HIGH</option>
+                <option value="CRITICAL">CRITICAL</option>
+            </select>
+        </div>
+        
+        <div style="margin-top: 2rem;">
+            <button type="submit" class="btn btn-sakura" id="submit-btn">Submit Consultation</button>
+            <button type="button" class="btn btn-secondary" onclick="resetForm()">Clear Form</button>
+        </div>
+    </form>
+</div>
+
+<div id="success-modal" class="modal">
+    <div class="modal-content" style="max-width: 500px;">
+        <div class="modal-header">
+            <h3><i class="fa-solid fa-circle-check" style="color: #27ae60"></i> Consultation Submitted</h3>
+            <button class="modal-close" onclick="closeSuccessModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p>Consultation has been saved successfully and Telegram message sent to mother.</p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeSuccessModal()">Close</button>
+            <a href="{{ url_for('doctor_dashboard.mothers', doctor_id=doctor_id) }}" class="btn btn-sakura">Back to Patients</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let ASSESSMENT_ID = "{{ assessment_id }}";
+
+if (!DOCTOR_ID) {
+    showAlert('Missing doctor_id in URL/Session', 'error');
+}
+
+// Toggle override fields
+document.getElementById('override-ai').addEventListener('change', (e) => {
+    const display = e.target.checked ? 'block' : 'none';
+    document.getElementById('override-reason-group').style.display = display;
+    document.getElementById('override-risk-group').style.display = display;
+});
+
+// Load mothers for the dropdown
+async function loadMothersList() {
+    if (!DOCTOR_ID) return;
+    
+    try {
+        const response = await fetch(`/doctor/mothers?doctor_id=${DOCTOR_ID}`);
+        const data = await response.json();
+        
+        const select = document.getElementById('mother-select');
+        select.innerHTML = '<option value="">-- Select a Patient --</option>';
+        
+        if (data.mothers && data.mothers.length > 0) {
+            data.mothers.forEach(mother => {
+                const hasAssessment = mother.latest_assessment != null;
+                const assessId = hasAssessment ? mother.latest_assessment.assessment_id : '';
+                
+                const option = document.createElement('option');
+                option.value = assessId;
+                
+                if (hasAssessment) {
+                    option.textContent = `${mother.name} (Risk: ${mother.current_risk_level})`;
+                } else {
+                    option.disabled = true;
+                    option.textContent = `${mother.name} (No pending assessment)`;
+                }
+                
+                // Pre-select if URL has this assessment ID
+                if (ASSESSMENT_ID && assessId === ASSESSMENT_ID) {
+                    option.selected = true;
+                }
+                
+                select.appendChild(option);
+            });
+        } else {
+            select.innerHTML = '<option value="">-- No Patients Found --</option>';
+        }
+    } catch (error) {
+        console.error('Failed to load mothers:', error);
+        document.getElementById('mother-select').innerHTML = '<option value="">Failed to load patients</option>';
+    }
+}
+
+// Handle Dropdown Change
+function handleMotherSelection() {
+    const select = document.getElementById('mother-select');
+    const selectedAssessmentId = select.value;
+    
+    if (selectedAssessmentId) {
+        ASSESSMENT_ID = selectedAssessmentId;
+        document.getElementById('consultation-form').style.display = 'block';
+        loadAssessmentSummary();
+    } else {
+        ASSESSMENT_ID = '';
+        document.getElementById('assessment-summary').style.display = 'none';
+        document.getElementById('consultation-form').style.display = 'none';
+    }
+}
+
+// Load assessment summary
+async function loadAssessmentSummary() {
+    if (!DOCTOR_ID || !ASSESSMENT_ID) return;
+    
+    try {
+        const response = await fetch(`/doctor/assessments?doctor_id=${DOCTOR_ID}&assessment_id=${ASSESSMENT_ID}`);
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to load assessment');
+        }
+        
+        // Handle array response (if it returns a list) or single object
+        const assessment = Array.isArray(data.assessments) ? 
+            data.assessments.find(a => a._id === ASSESSMENT_ID) || data.assessments[0] : 
+            (data.assessment || {});
+            
+        const aiEval = assessment.ai_evaluation || {};
+        const vitals = assessment.vitals || {};
+        
+        document.getElementById('assessment-details').innerHTML = `
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div><strong>Mother:</strong> ${assessment.mother_name || assessment.name || 'Unknown'}</div>
+                <div><strong>ASHA Worker:</strong> ${assessment.asha_name || 'Unknown'}</div>
+                <div><strong>Date:</strong> ${assessment.timestamp ? new Date(assessment.timestamp).toLocaleDateString() : 'N/A'}</div>
+                <div><strong>AI Risk:</strong> <span class="badge badge-${getRiskClass(aiEval.risk_category)}">${aiEval.risk_category || 'N/A'}</span></div>
+                <div><strong>BP:</strong> ${vitals.bp_systolic || 'N/A'}/${vitals.bp_diastolic || 'N/A'} mmHg</div>
+                <div><strong>Heart Rate:</strong> ${vitals.heart_rate || 'N/A'} bpm</div>
+            </div>
+        `;
+        document.getElementById('assessment-summary').style.display = 'block';
+        
+    } catch (error) {
+        console.error('Failed to load assessment summary:', error);
+        showAlert('Failed to load clinical vitals for this patient.', 'warning');
+    }
+}
+
+// Handle form submission
+document.getElementById('consultation-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const overrideAI = document.getElementById('override-ai').checked;
+    
+    // Build payload
+    const payload = {
+        doctor_id: DOCTOR_ID,
+        assessment_id: ASSESSMENT_ID,
+        diagnosis: document.getElementById('diagnosis').value,
+        clinical_observations: document.getElementById('clinical-observations').value || '',
+        treatment_plan: document.getElementById('treatment-plan').value,
+        next_visit_date: document.getElementById('next-visit-date').value || null
+    };
+    
+    // Add updated vitals if provided
+    const bpSystolic = document.getElementById('bp-systolic').value;
+    const bpDiastolic = document.getElementById('bp-diastolic').value;
+    if (bpSystolic && bpDiastolic) {
+        payload.updated_vitals = {
+            bp_systolic: parseInt(bpSystolic),
+            bp_diastolic: parseInt(bpDiastolic)
+        };
+    }
+    
+    // Add override if checked
+    if (overrideAI) {
+        const overrideReason = document.getElementById('override-reason').value;
+        const overrideRiskLevel = document.getElementById('override-risk-level').value;
+        
+        if (!overrideReason || !overrideRiskLevel) {
+            showAlert('Please provide override reason and risk level', 'warning');
+            return;
+        }
+        
+        payload.override_ai_risk = true;
+        payload.override_reason = overrideReason;
+        payload.final_risk_level = overrideRiskLevel;
+    }
+    
+    // Submit
+    const submitBtn = document.getElementById('submit-btn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Submitting...';
+    
+    try {
+        const response = await fetch('/doctor/consultation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            document.getElementById('success-modal').style.display = 'flex';
+        } else {
+            throw new Error(result.error || 'Consultation submission failed');
+        }
+        
+    } catch (error) {
+        console.error('Consultation submission failed:', error);
+        showAlert('Consultation submission failed: ' + error.message, 'error');
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Submit Consultation';
+    }
+});
+
+// Reset form
+function resetForm() {
+    document.getElementById('consultation-form').reset();
+    document.getElementById('override-reason-group').style.display = 'none';
+    document.getElementById('override-risk-group').style.display = 'none';
+}
+
+// Close success modal
+function closeSuccessModal() {
+    document.getElementById('success-modal').style.display = 'none';
+}
+
+// Get risk CSS class
+function getRiskClass(risk) {
+    const classes = {
+        'LOW': 'success',
+        'MODERATE': 'warning',
+        'HIGH': 'danger',
+        'CRITICAL': 'critical',
+        'N/A': 'secondary'
+    };
+    return classes[risk] || 'secondary';
+}
+
+// Load data on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadMothersList();
+    if (ASSESSMENT_ID) {
+        loadAssessmentSummary();
+    } else {
+        document.getElementById('consultation-form').style.display = 'none';
+        document.getElementById('assessment-summary').style.display = 'none';
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,247 @@
+{% extends "doctor/base.html" %}
+
+{% block page_title %}Doctor Dashboard{% endblock %}
+{% block page_header %}Doctor Dashboard{% endblock %}
+
+{% block content %}
+<!-- KPI Cards -->
+<div class="kpi-grid">
+    <div class="kpi-card">
+        <div class="kpi-icon"><i class="fa-solid fa-users"></i></div>
+        <div class="kpi-content">
+            <div class="kpi-label">Total Assigned Mothers</div>
+            <div class="kpi-value" id="total-mothers">--</div>
+        </div>
+    </div>
+    
+    <div class="kpi-card">
+        <div class="kpi-icon" style="color: var(--critical-color)"><i class="fa-solid fa-triangle-exclamation"></i></div>
+        <div class="kpi-content">
+            <div class="kpi-label">High Risk Mothers</div>
+            <div class="kpi-value" id="high-risk-mothers" style="color: var(--critical-color)">--</div>
+        </div>
+    </div>
+    
+    <div class="kpi-card">
+        <div class="kpi-icon"><i class="fa-solid fa-clipboard-list"></i></div>
+        <div class="kpi-content">
+            <div class="kpi-label">Pending Reviews</div>
+            <div class="kpi-value" id="pending-reviews">--</div>
+        </div>
+    </div>
+    
+    <div class="kpi-card">
+        <div class="kpi-icon"><i class="fa-solid fa-comments"></i></div>
+        <div class="kpi-content">
+            <div class="kpi-label">Consultations This Week</div>
+            <div class="kpi-value" id="consultations-week">--</div>
+        </div>
+    </div>
+</div>
+
+<!-- Risk Distribution -->
+<div class="stats-section">
+    <h3 class="section-title">Risk Distribution</h3>
+    <div class="risk-cards-grid">
+        <div class="risk-card risk-low">
+            <div class="risk-label">Low Risk</div>
+            <div class="risk-value" id="risk-low">--</div>
+        </div>
+        
+        <div class="risk-card risk-moderate">
+            <div class="risk-label">Moderate Risk</div>
+            <div class="risk-value" id="risk-moderate">--</div>
+        </div>
+        
+        <div class="risk-card risk-high">
+            <div class="risk-label">High Risk</div>
+            <div class="risk-value" id="risk-high">--</div>
+        </div>
+        
+        <div class="risk-card risk-critical">
+            <div class="risk-label">Critical Risk</div>
+            <div class="risk-value" id="risk-critical">--</div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Assessments Needing Review -->
+<div class="table-card">
+    <h3 class="table-title">Recent Assessments Needing Review</h3>
+    <div class="table-responsive">
+        <table class="data-table" id="recent-assessments-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Mother Name</th>
+                    <th>ASHA Worker</th>
+                    <th>Risk Level</th>
+                    <th>AI Score</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="recent-assessments-body">
+                <tr>
+                    <td colspan="7" class="text-center">Loading...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Check if Doctor ID is set
+if (!DOCTOR_ID || DOCTOR_ID === '') {
+    showAlert('Please provide Doctor ID in URL: ?doctor_id=<your_id>', 'warning');
+}
+
+// Load dashboard data
+async function loadDashboardData() {
+    if (!DOCTOR_ID) return;
+    
+    try {
+        const response = await fetch(`/doctor/mothers?doctor_id=${DOCTOR_ID}`);
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to load data');
+        }
+        
+        // Calculate statistics from mothers data
+        const mothers = data.mothers || [];
+        const totalMothers = mothers.length;
+        
+        // Count risk levels and pending reviews
+        let highRiskCount = 0;
+        let pendingReviews = 0;
+        const riskCounts = { LOW: 0, MODERATE: 0, HIGH: 0, CRITICAL: 0 };
+        
+        for (const mother of mothers) {
+            const currentRisk = mother.current_risk_level || 'N/A';
+            if (currentRisk === 'HIGH' || currentRisk === 'CRITICAL') {
+                highRiskCount++;
+            }
+            if (riskCounts.hasOwnProperty(currentRisk)) {
+                riskCounts[currentRisk]++;
+            }
+            if (mother.pending_review_count) {
+                pendingReviews += mother.pending_review_count;
+            }
+        }
+        
+        // Update KPI cards
+        document.getElementById('total-mothers').textContent = totalMothers;
+        document.getElementById('high-risk-mothers').textContent = highRiskCount;
+        document.getElementById('pending-reviews').textContent = pendingReviews;
+        document.getElementById('consultations-week').textContent = data.consultations_this_week || 0;
+        
+        // Update risk distribution
+        document.getElementById('risk-low').textContent = riskCounts.LOW;
+        document.getElementById('risk-moderate').textContent = riskCounts.MODERATE;
+        document.getElementById('risk-high').textContent = riskCounts.HIGH;
+        document.getElementById('risk-critical').textContent = riskCounts.CRITICAL;
+        
+        // Load recent assessments
+        await loadRecentAssessments();
+        
+        updateTimestamp();
+        
+    } catch (error) {
+        console.error('Failed to load dashboard data:', error);
+        showAlert('Failed to load dashboard data: ' + error.message, 'error');
+    }
+}
+
+// Load recent assessments needing review
+async function loadRecentAssessments() {
+    if (!DOCTOR_ID) return;
+    
+    try {
+        const response = await fetch(`/doctor/assessments?doctor_id=${DOCTOR_ID}`);
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to load assessments');
+        }
+        
+        const tbody = document.getElementById('recent-assessments-body');
+        const assessments = data.assessments || [];
+        
+        // Filter unreviewed only
+        const unreviewed = assessments.filter(a => !a.doctor_reviewed);
+        
+        if (unreviewed.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="7" style="text-align: center; padding: 2.5rem;">
+                        <div style="color: var(--text-secondary);">
+                            <div style="font-size: 2.5rem; margin-bottom: 0.5rem; color: var(--success-color);"><i class="fa-solid fa-circle-check"></i></div>
+                            <p style="margin: 0; font-weight: 600; color: var(--fuji-700);">All Caught Up!</p>
+                            <p style="margin: 0.25rem 0 0 0; font-size: 0.9rem;">No pending assessments to review.</p>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+        
+        // Take top 10
+        const recent = unreviewed.slice(0, 10);
+        
+        tbody.innerHTML = recent.map(assessment => {
+            const date = new Date(assessment.timestamp).toLocaleDateString();
+            const riskLevel = assessment.ai_evaluation?.risk_category || 'N/A';
+            const riskClass = getRiskClass(riskLevel);
+            const riskBadge = `<span class="badge badge-${riskClass}">${riskLevel}</span>`;
+            const aiScore = assessment.ai_evaluation?.risk_score ? `${assessment.ai_evaluation.risk_score}/100` : 'N/A';
+            const statusBadge = assessment.doctor_reviewed 
+                ? '<span class="badge badge-success">Reviewed</span>'
+                : '<span class="badge badge-warning">Pending</span>';
+            
+            return `
+                <tr>
+                    <td>${date}</td>
+                    <td><strong>${assessment.mother_name || 'Unknown'}</strong></td>
+                    <td>${assessment.asha_name || 'N/A'}</td>
+                    <td>${riskBadge}</td>
+                    <td>${aiScore}</td>
+                    <td>${statusBadge}</td>
+                    <td>
+                        <a href="${window.location.pathname.replace('dashboard/', 'dashboard/consultation/new')}?doctor_id=${DOCTOR_ID}&assessment_id=${assessment.assessment_id}" 
+                           class="btn btn-sm btn-sakura">
+                           <i class="fa-solid fa-magnifying-glass-pulse"></i> Review
+                        </a>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+        
+    } catch (error) {
+        console.error('Failed to load recent assessments:', error);
+    }
+}
+
+// Get risk CSS class
+function getRiskClass(risk) {
+    const classes = {
+        'LOW': 'success',
+        'MODERATE': 'warning',
+        'HIGH': 'danger',
+        'CRITICAL': 'critical',
+        'N/A': 'secondary'
+    };
+    return classes[risk] || 'secondary';
+}
+
+// Load data on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadDashboardData();
+    
+    // Refresh every 2 minutes
+    setInterval(loadDashboardData, 120000);
+});
+</script>
+{% endblock %}

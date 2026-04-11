@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block page_title %}Doctor Portal{% endblock %} - ArogyaMaa</title>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Theme CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <div class="admin-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>🌸 ArogyaMaa</h2>
+                <p class="subtitle">Doctor Portal</p>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <a href="{{ url_for('doctor_dashboard.dashboard', doctor_id=doctor_id) }}" class="nav-item {% if request.endpoint == 'doctor_dashboard.dashboard' %}active{% endif %}">
+                    <span class="nav-icon"><i class="fa-solid fa-gauge-high"></i></span>
+                    <span class="nav-text">Dashboard</span>
+                </a>
+                <a href="{{ url_for('doctor_dashboard.mothers', doctor_id=doctor_id) }}" class="nav-item {% if request.endpoint == 'doctor_dashboard.mothers' %}active{% endif %}">
+                    <span class="nav-icon"><i class="fa-solid fa-hospital-user"></i></span>
+                    <span class="nav-text">My Patients</span>
+                </a>
+                <a href="{{ url_for('doctor_dashboard.ai_assistant', doctor_id=doctor_id) }}" class="nav-item {% if request.endpoint == 'doctor_dashboard.ai_assistant' %}active{% endif %}">
+                    <span class="nav-icon"><i class="fa-solid fa-microchip"></i></span>
+                    <span class="nav-text">AI Assistant</span>
+                </a>
+                <a href="{{ url_for('doctor_dashboard.message', doctor_id=doctor_id) }}" class="nav-item {% if request.endpoint == 'doctor_dashboard.message' %}active{% endif %}">
+                    <span class="nav-icon"><i class="fa-solid fa-envelope-open-text"></i></span>
+                    <span class="nav-text">Send Message</span>
+                </a>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <div class="system-status">
+                    <h4>Doctor Info</h4>
+                    <div class="status-item">
+                        <span class="status-label">Name:</span>
+                        <span class="status-value">{{ doctor_name if doctor_name else 'Unknown' }}</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Doctor ID:</span>
+                        <span class="status-value" id="doctor-id-display">{{ doctor_id[:8] if doctor_id else 'Not Set' }}...</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">AI Support:</span>
+                        <span class="status-value status-active">Active</span>
+                    </div>
+                </div>
+                <a href="{{ url_for('auth.logout') }}" class="sidebar-logout"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
+            </div>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="page-header">
+                <h1>{% block page_header %}Doctor Portal{% endblock %}</h1>
+                <div class="header-actions">
+                    <span class="timestamp">Last updated: <span id="last-updated">--</span></span>
+                </div>
+            </header>
+            
+            <div class="content-area">
+                {% block content %}{% endblock %}
+                
+                <!-- Footer Notice -->
+                <div style="margin-top: 3rem; padding: 1.25rem; background: var(--card-bg); border-radius: var(--card-radius); text-align: center; border-top: 3px solid var(--sakura-pink); box-shadow: var(--card-shadow);">
+                    <p style="margin: 0; color: var(--text-secondary); font-size: 0.9rem; font-weight: 500;">
+                        <i class="fa-solid fa-lightbulb" style="color: #fbbf24; margin-right: 0.5rem;"></i> AI is assistive. Final decisions are made by healthcare professionals.
+                    </p>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <script src="{{ url_for('static', filename='js/admin_dashboard.js') }}"></script>
+    <script>
+        // Global variables
+        const DOCTOR_ID = "{{ doctor_id }}";
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,289 @@
+{% extends "doctor/base.html" %}
+
+{% block page_title %}View Consultation{% endblock %}
+{% block page_header %}View Consultation{% endblock %}
+
+{% block content %}
+<div class="page-actions">
+    <button onclick="history.back()" class="btn btn-secondary"><i class="fa-solid fa-arrow-left"></i> Back</button>
+    <button class="btn btn-sakura" onclick="window.print()"><i class="fa-solid fa-print"></i> Print</button>
+</div>
+
+<!-- Consultation Details Container -->
+<div id="consultation-container">
+    <p class="text-center">Loading consultation details...</p>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const ASSESSMENT_ID = "{{ assessment_id }}";
+let consultationData = null;
+
+if (!DOCTOR_ID || !ASSESSMENT_ID) {
+    showAlert('Missing doctor_id or assessment_id in URL', 'error');
+}
+
+// Load consultation details
+async function loadConsultation() {
+    if (!DOCTOR_ID || !ASSESSMENT_ID) return;
+    
+    try {
+        // Fetch single assessment with consultation
+        const response = await fetch(`/doctor/assessment/${ASSESSMENT_ID}?doctor_id=${DOCTOR_ID}`);
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to load consultation');
+        }
+        
+        if (!data.doctor_consultation) {
+            throw new Error('No consultation found for this assessment');
+        }
+        
+        consultationData = {
+            assessment: data,
+            consultation: data.doctor_consultation,
+            mother: data.mother_info,
+            aiEval: data.ai_evaluation || {}
+        };
+        
+        renderConsultation();
+        updateTimestamp();
+        
+    } catch (error) {
+        console.error('Failed to load consultation:', error);
+        showAlert('Failed to load consultation: ' + error.message, 'error');
+        document.getElementById('consultation-container').innerHTML = `
+            <div class="alert alert-danger">
+                <strong>Error:</strong> ${error.message}
+                <br><br>
+                <button onclick="history.back()" class="btn btn-secondary">Go Back</button>
+            </div>
+        `;
+    }
+}
+
+// Render consultation details
+function renderConsultation() {
+    if (!consultationData) return;
+    
+    const { assessment, consultation, mother, aiEval } = consultationData;
+    const container = document.getElementById('consultation-container');
+    
+    const aiRiskCategory = aiEval.risk_category || 'N/A';
+    const aiRiskScore = aiEval.risk_score || 'N/A';
+    const doctorRisk = consultation.doctor_risk_assessment || 'N/A';
+    const aiOverridden = consultation.ai_overridden;
+    
+    const aiRiskClass = getRiskClass(aiRiskCategory);
+    const doctorRiskClass = getRiskClass(doctorRisk);
+    
+    container.innerHTML = `
+        <!-- Header Card -->
+        <div class="table-card" style="margin-bottom: 1.5rem; background: linear-gradient(135deg, var(--fuji-700) 0%, var(--fuji-500) 100%); color: white;">
+            <h3 style="margin: 0; color: white;"><i class="fa-solid fa-file-invoice-medical"></i> Consultation Details</h3>
+            <p style="margin: 0.5rem 0 0 0; opacity: 0.9;">
+                ${new Date(consultation.timestamp).toLocaleString()}
+            </p>
+        </div>
+        
+        <!-- AI Override Alert (if applicable) -->
+        ${aiOverridden ? `
+            <div style="background: #fff3cd; border-left: 4px solid var(--warning-color); padding: 1rem; margin-bottom: 1.5rem; border-radius: 4px;">
+                <strong><i class="fa-solid fa-triangle-exclamation"></i> AI Risk Assessment Overridden</strong>
+                <p style="margin: 0.5rem 0 0 0;">
+                    <strong>Reason:</strong> ${consultation.override_reason || 'Clinical judgment'}
+                </p>
+                <p style="margin: 0.5rem 0 0 0; font-size: 0.9rem; color: #856404;">
+                    Doctor decision is final and overrides AI recommendation
+                </p>
+            </div>
+        ` : ''}
+        
+        <!-- Patient & Assessment Info -->
+        <div class="table-card" style="margin-bottom: 1.5rem;">
+            <h4>Patient & Assessment Information</h4>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 1rem;">
+                <div>
+                    <strong>Patient Name:</strong><br>
+                    ${mother?.name || assessment.mother_name || 'N/A'}
+                </div>
+                <div>
+                    <strong>Assessment Date:</strong><br>
+                    ${new Date(assessment.timestamp).toLocaleDateString()}
+                </div>
+                <div>
+                    <strong>Gestational Age:</strong><br>
+                    ${assessment.gestational_age_weeks || 'N/A'} weeks
+                </div>
+            </div>
+        </div>
+        
+        <!-- Risk Assessment Comparison -->
+        <div class="table-card" style="margin-bottom: 1.5rem;">
+            <h4>Risk Assessment</h4>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1rem;">
+                <div style="padding: 1rem; background: #f8f9fa; border-radius: 4px;">
+                    <h5 style="margin: 0 0 0.5rem 0; color: #6c757d;">AI Advisory</h5>
+                    <p style="margin: 0;">
+                        <span class="badge badge-${aiRiskClass}">${aiRiskCategory}</span>
+                        <span style="margin-left: 0.5rem; color: #6c757d;">Score: ${aiRiskScore}/100</span>
+                    </p>
+                    <p style="margin: 0.5rem 0 0 0; font-size: 0.85rem; color: #6c757d; font-style: italic;">
+                        (AI Advisory - Doctor Reviewed)
+                    </p>
+                </div>
+                <div style="padding: 1rem; background: rgba(39, 174, 96, 0.05); border-radius: 8px; border: 2px solid var(--success-color);">
+                    <h5 style="margin: 0 0 0.5rem 0; color: var(--success-color);"><i class="fa-solid fa-user-doctor"></i> Final Doctor Assessment</h5>
+                    <p style="margin: 0;">
+                        <span class="badge badge-${doctorRiskClass}" style="font-size: 1.1rem;">${doctorRisk}</span>
+                    </p>
+                    <p style="margin: 0.5rem 0 0 0; font-size: 0.85rem; color: var(--success-color); font-weight: 600;">
+                        <i class="fa-solid fa-check-double"></i> Doctor decision is final
+                    </p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Diagnosis & Observations -->
+        <div class="table-card" style="margin-bottom: 1.5rem;">
+            <h4>Clinical Assessment</h4>
+            
+            <div style="margin-top: 1rem;">
+                <h5>Diagnosis</h5>
+                <p style="background: #f8f9fa; padding: 1rem; border-radius: 4px; margin: 0.5rem 0;">
+                    ${consultation.diagnosis || 'N/A'}
+                </p>
+            </div>
+            
+            <div style="margin-top: 1rem;">
+                <h5>Clinical Observations</h5>
+                <p style="background: #f8f9fa; padding: 1rem; border-radius: 4px; margin: 0.5rem 0;">
+                    ${consultation.observations || 'N/A'}
+                </p>
+            </div>
+        </div>
+        
+        <!-- Vitals -->
+        ${consultation.updated_vitals ? `
+            <div class="table-card" style="margin-bottom: 1.5rem;">
+                <h4>Updated Vitals</h4>
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-top: 1rem;">
+                    ${consultation.updated_vitals.bp_systolic ? `
+                        <div>
+                            <strong>Blood Pressure:</strong><br>
+                            ${consultation.updated_vitals.bp_systolic}/${consultation.updated_vitals.bp_diastolic} mmHg
+                        </div>
+                    ` : ''}
+                    ${consultation.updated_vitals.weight_kg ? `
+                        <div>
+                            <strong>Weight:</strong><br>
+                            ${consultation.updated_vitals.weight_kg} kg
+                        </div>
+                    ` : ''}
+                    ${consultation.updated_vitals.glucose_mg_dl ? `
+                        <div>
+                            <strong>Glucose:</strong><br>
+                            ${consultation.updated_vitals.glucose_mg_dl} mg/dL
+                        </div>
+                    ` : ''}
+                    ${consultation.updated_vitals.hemoglobin_g_dl ? `
+                        <div>
+                            <strong>Hemoglobin:</strong><br>
+                            ${consultation.updated_vitals.hemoglobin_g_dl} g/dL
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+        ` : ''}
+        
+        <!-- Treatment Plan -->
+        <div class="table-card" style="margin-bottom: 1.5rem;">
+            <h4>Treatment Plan</h4>
+            <div style="background: #e3f2fd; padding: 1rem; border-radius: 4px; margin-top: 1rem; border-left: 4px solid #2196f3;">
+                ${consultation.treatment_plan || 'N/A'}
+            </div>
+            
+            ${consultation.prescriptions ? `
+                <div style="margin-top: 1rem;">
+                    <h5>Prescriptions</h5>
+                    <p style="background: #f8f9fa; padding: 1rem; border-radius: 4px; margin: 0.5rem 0;">
+                        ${consultation.prescriptions}
+                    </p>
+                </div>
+            ` : ''}
+        </div>
+        
+        <!-- Follow-up & Additional Info -->
+        <div class="table-card" style="margin-bottom: 1.5rem;">
+            <h4>Follow-up & Additional Information</h4>
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-top: 1rem;">
+                <div>
+                    <strong>Next Visit Date:</strong><br>
+                    ${consultation.follow_up_date 
+                        ? new Date(consultation.follow_up_date).toLocaleDateString() 
+                        : 'Not specified'}
+                </div>
+                <div>
+                    <strong>Referral Required:</strong><br>
+                    ${consultation.referral_required ? 'Yes' : 'No'}
+                    ${consultation.referral_notes ? `<br><small>${consultation.referral_notes}</small>` : ''}
+                </div>
+            </div>
+            
+            ${consultation.special_instructions ? `
+                <div style="margin-top: 1rem;">
+                    <strong>Special Instructions:</strong>
+                    <p style="background: #fff3e0; padding: 1rem; border-radius: 4px; margin: 0.5rem 0; border-left: 4px solid #ff9800;">
+                        ${consultation.special_instructions}
+                    </p>
+                </div>
+            ` : ''}
+        </div>
+        
+        <!-- Doctor Information -->
+        <div class="table-card">
+            <h4>Consulting Doctor</h4>
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-top: 1rem;">
+                <div>
+                    <strong>Doctor Name:</strong><br>
+                    ${consultation.doctor_name || 'N/A'}
+                </div>
+                <div>
+                    <strong>Consultation Date:</strong><br>
+                    ${new Date(consultation.timestamp).toLocaleString()}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Footer Notice -->
+        <div style="margin-top: 2rem; padding: 1.5rem; background: rgba(39, 174, 96, 0.05); border-radius: 12px; text-align: center; border: 1px solid var(--success-color);">
+            <p style="margin: 0; color: var(--success-color); font-weight: 500;">
+                <i class="fa-solid fa-clipboard-check"></i> This consultation record is finalized and cannot be edited.
+            </p>
+            <p style="margin: 0.5rem 0 0 0; color: var(--text-secondary); font-size: 0.9rem;">
+                <i class="fa-solid fa-circle-info"></i> AI is assistive. Final decisions are made by healthcare professionals.
+            </p>
+        </div>
+    `;
+}
+
+// Get risk CSS class
+function getRiskClass(risk) {
+    const classes = {
+        'LOW': 'success',
+        'MODERATE': 'warning',
+        'HIGH': 'danger',
+        'CRITICAL': 'critical',
+        'N/A': 'secondary'
+    };
+    return classes[risk] || 'secondary';
+}
+
+// Load data on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadConsultation();
+});
+</script>
+{% endblock %}
