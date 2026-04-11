@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>नया अपॉइंटमेंट अनुरोध</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f4f6f9;
+      margin: 0;
+      padding: 20px;
+      color: #333;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background: #ffffff;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .header {
+      background-color: #2c7be5;
+      color: white;
+      padding: 24px;
+      text-align: center;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 22px;
+    }
+    .content {
+      padding: 30px;
+    }
+    .greeting {
+      font-size: 16px;
+      margin-bottom: 20px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 30px;
+    }
+    th {
+      background-color: #eaf0fb;
+      text-align: left;
+      padding: 10px 14px;
+      font-size: 14px;
+      color: #555;
+      width: 40%;
+      border-bottom: 1px solid #ddd;
+    }
+    td {
+      padding: 10px 14px;
+      font-size: 15px;
+      border-bottom: 1px solid #eee;
+    }
+    .actions {
+      text-align: center;
+      margin-top: 20px;
+    }
+    .btn {
+      display: inline-block;
+      padding: 14px 32px;
+      font-size: 16px;
+      font-weight: bold;
+      border-radius: 6px;
+      text-decoration: none;
+      margin: 8px 12px;
+    }
+    .btn-confirm {
+      background-color: #28a745;
+      color: white;
+    }
+    .btn-reschedule {
+      background-color: #fd7e14;
+      color: white;
+    }
+    .footer {
+      background-color: #f4f6f9;
+      text-align: center;
+      padding: 16px;
+      font-size: 12px;
+      color: #999;
+    }
+    .note {
+      font-size: 13px;
+      color: #666;
+      background: #fff8e1;
+      border-left: 4px solid #ffc107;
+      padding: 12px 16px;
+      margin-top: 20px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <div class="header">
+      <h1>🏥 नया अपॉइंटमेंट अनुरोध</h1>
+      <p style="margin:8px 0 0; font-size:14px; opacity:0.9;">ArogyaMaa Appointment System</p>
+    </div>
+
+    <div class="content">
+      <p class="greeting">
+        नमस्ते {{ doctor_name }},<br><br>
+        एक नए मरीज़ ने अपॉइंटमेंट का अनुरोध किया है।
+        कृपया नीचे दिए गए विवरण देखें और कार्रवाई करें।
+      </p>
+
+      <table>
+        <tr><th>मरीज़ का नाम</th><td>{{ appointment.patient_name }}</td></tr>
+        <tr><th>उम्र</th><td>{{ appointment.patient_age }} वर्ष</td></tr>
+        <tr><th>मोबाइल नंबर</th><td>{{ appointment.patient_phone }}</td></tr>
+        <tr><th>अनुरोधित तारीख</th><td>{{ appointment.preferred_date }}</td></tr>
+        <tr><th>अनुरोधित समय</th><td>{{ appointment.preferred_time }}</td></tr>
+        <tr><th>लक्षण</th><td>{{ appointment.symptoms }}</td></tr>
+        <tr><th>स्थिति</th><td><strong>{{ appointment.status }}</strong></td></tr>
+        <tr><th>अपॉइंटमेंट ID</th><td style="font-size:12px; color:#999;">{{ appointment.appointment_id }}</td></tr>
+      </table>
+
+      <div class="actions">
+        <p style="margin-bottom: 16px; font-size: 15px;">
+          कृपया नीचे दिए गए बटनों से अपना निर्णय दें:
+        </p>
+        <a href="{{ confirm_url }}" class="btn btn-confirm">✅ अपॉइंटमेंट पुष्टि करें</a>
+        <a href="{{ reschedule_url }}" class="btn btn-reschedule">🔄 नई तारीख/समय दें</a>
+      </div>
+
+      <div class="note">
+        <strong>नोट:</strong> "पुष्टि करें" बटन दबाने पर मरीज़ को उसी तारीख और समय की पुष्टि भेजी जाएगी।
+        "नई तारीख/समय दें" बटन दबाने पर आप नई तारीख और समय चुन सकेंगे।
+      </div>
+    </div>
+
+    <div class="footer">
+      यह ईमेल ArogyaMaa AI Healthcare System द्वारा स्वचालित रूप से भेजा गया है।
+    </div>
+
+  </div>
+</body>
+</html>
