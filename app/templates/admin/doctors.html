@@ -1,0 +1,193 @@
+{% extends "admin/base.html" %}
+
+{% block page_title %}Doctors Overview{% endblock %}
+
+{% block content %}
+<div class="page-actions">
+    <button class="btn btn-sakura" onclick="openAddDoctorModal()"><i class="fa-solid fa-plus"></i> Add Doctor</button>
+    <button class="btn btn-secondary" onclick="loadDoctorsData()"><i class="fa-solid fa-arrows-rotate"></i> Refresh Data</button>
+</div>
+
+<!-- Add Doctor Modal -->
+<div id="addDoctorModal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 550px;">
+        <div class="modal-header">
+            <h3><i class="fa-solid fa-user-doctor"></i> Register New Doctor</h3>
+            <button class="modal-close" onclick="closeAddDoctorModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="addDoctorForm" onsubmit="submitDoctor(event)">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div class="form-group">
+                        <label>Full Name</label>
+                        <input type="text" name="name" class="form-control" required placeholder="Dr. Name">
+                    </div>
+                    <div class="form-group">
+                        <label>Specialization</label>
+                        <input type="text" name="specialization" class="form-control" required placeholder="e.g. Obstetrics">
+                    </div>
+                    <div class="form-group">
+                        <label>Phone Number</label>
+                        <input type="tel" name="phone" class="form-control" required placeholder="10-digit mobile">
+                    </div>
+                    <div class="form-group">
+                        <label>Hospital/Clinic</label>
+                        <input type="text" name="hospital" class="form-control" required placeholder="Hospital Name">
+                    </div>
+                    
+                    <div style="grid-column: span 2; margin-top: 0.5rem; border-top: 1px solid var(--border-color); padding-top: 1rem;">
+                        <h4 style="margin-bottom: 0.75rem; color: var(--sakura-600); font-size: 0.9rem;">Portal Access Credentials</h4>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Username</label>
+                        <input type="text" name="username" class="form-control" required placeholder="Login ID">
+                    </div>
+                    <div class="form-group">
+                        <label>Password</label>
+                        <input type="password" name="password" class="form-control" required placeholder="Min 6 characters">
+                    </div>
+                </div>
+                
+                <div class="modal-footer" style="padding: 1.5rem 0 0 0; border: none;">
+                    <button type="button" class="btn btn-secondary" onclick="closeAddDoctorModal()">Cancel</button>
+                    <button type="submit" class="btn btn-sakura">Register Doctor</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Doctors Table -->
+<div class="table-card">
+    <h3 class="table-title">Registered Doctors</h3>
+    <div class="table-responsive">
+        <table class="data-table" id="doctors-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Specialization</th>
+                    <th>Hospital</th>
+                    <th>Phone</th>
+                    <th>Assigned Mothers</th>
+                    <th>Pending Reviews</th>
+                    <th>Avg Response Time</th>
+                </tr>
+            </thead>
+            <tbody id="doctors-table-body">
+                <tr>
+                    <td colspan="7" class="text-center">Loading...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Info Card -->
+<div class="info-card">
+    <h4>About Pending Reviews</h4>
+    <p>Pending reviews represent assessments flagged for doctor attention that have not yet been reviewed. High-risk and critical cases are automatically flagged for doctor review.</p>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let doctorsData = [];
+
+// Load doctors data
+async function loadDoctorsData() {
+    try {
+        const response = await fetch('/admin/doctors');
+        doctorsData = await response.json();
+        
+        renderDoctorsTable();
+        updateTimestamp();
+        
+    } catch (error) {
+        console.error('Failed to load doctors data:', error);
+        showAlert('Failed to load doctors data', 'error');
+    }
+}
+
+// Render doctors table
+function renderDoctorsTable() {
+    const tbody = document.getElementById('doctors-table-body');
+    
+    if (doctorsData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center">No doctors registered</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = doctorsData.map(doctor => {
+        const pendingBadge = doctor.pending_reviews > 0 
+            ? `<span class="badge badge-warning">${doctor.pending_reviews}</span>`
+            : `<span class="badge badge-success">0</span>`;
+        
+        const avgResponseTime = doctor.avg_response_time > 0 
+            ? `${doctor.avg_response_time}h`
+            : 'N/A';
+        
+        return `
+            <tr>
+                <td><strong>${doctor.name}</strong></td>
+                <td>${doctor.specialization}</td>
+                <td>${doctor.hospital}</td>
+                <td>${doctor.phone}</td>
+                <td class="text-center">${doctor.assigned_mothers}</td>
+                <td class="text-center">${pendingBadge}</td>
+                <td class="text-center">${avgResponseTime}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// Modal control
+function openAddDoctorModal() {
+    document.getElementById('addDoctorModal').style.display = 'flex';
+}
+
+function closeAddDoctorModal() {
+    document.getElementById('addDoctorModal').style.display = 'none';
+}
+
+// Submit Doctor registration
+async function submitDoctor(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData.entries());
+    
+    try {
+        const response = await fetch('/admin/doctors', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        
+        const result = await response.json();
+        if (response.ok) {
+            alert('Doctor registered successfully!');
+            closeAddDoctorModal();
+            form.reset();
+            loadDoctorsData();
+        } else {
+            alert(result.error || 'Failed to register doctor');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('An error occurred. Please try again.');
+    }
+}
+
+// Load data on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadDoctorsData();
+    
+    // Check for "action=add" in URL
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('action') === 'add') {
+        openAddDoctorModal();
+    }
+});
+</script>
+{% endblock %}

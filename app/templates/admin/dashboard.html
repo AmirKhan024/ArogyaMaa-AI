@@ -1,0 +1,281 @@
+{% extends "admin/base.html" %}
+
+{% block page_title %}System Overview{% endblock %}
+
+{% block content %}
+<!-- Quick Actions -->
+<div style="margin-bottom: 2rem;">
+    <h3 style="margin-bottom: 1rem; color: var(--text-main); font-size: 1.2rem;">Quick Administrative Actions</h3>
+    <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+        <button class="btn btn-sakura" onclick="window.location.href='/admin/dashboard/doctors?action=add'">
+            <i class="fa-solid fa-user-doctor"></i> Register New Doctor
+        </button>
+        <button class="btn btn-sakura" onclick="window.location.href='/admin/dashboard/asha?action=add'">
+            <i class="fa-solid fa-user-nurse"></i> Register ASHA Worker
+        </button>
+    </div>
+</div>
+
+<!-- KPI Cards -->
+<div class="kpi-grid">
+    <div class="kpi-card">
+        <div class="kpi-icon"><i class="fa-solid fa-person-breastfeeding"></i></div>
+        <div class="kpi-content">
+            <div class="kpi-label">Total Mothers</div>
+            <div class="kpi-value" id="total-mothers">--</div>
+        </div>
+    </div>
+    
+    <div class="kpi-card">
+        <div class="kpi-icon"><i class="fa-solid fa-user-nurse"></i></div>
+        <div class="kpi-content">
+            <div class="kpi-label">ASHA Workers</div>
+            <div class="kpi-value" id="total-asha">--</div>
+        </div>
+    </div>
+    
+    <div class="kpi-card">
+        <div class="kpi-icon"><i class="fa-solid fa-user-doctor"></i></div>
+        <div class="kpi-content">
+            <div class="kpi-label">Doctors</div>
+            <div class="kpi-value" id="total-doctors">--</div>
+        </div>
+    </div>
+    
+    <div class="kpi-card">
+        <div class="kpi-icon"><i class="fa-solid fa-clipboard-check"></i></div>
+        <div class="kpi-content">
+            <div class="kpi-label">Total Assessments</div>
+            <div class="kpi-value" id="total-assessments">--</div>
+        </div>
+    </div>
+</div>
+
+<!-- Risk Distribution Cards -->
+<div class="risk-cards-grid">
+    <div class="risk-card risk-low">
+        <div class="risk-label">Low Risk</div>
+        <div class="risk-value" id="risk-low">--</div>
+    </div>
+    
+    <div class="risk-card risk-moderate">
+        <div class="risk-label">Moderate Risk</div>
+        <div class="risk-value" id="risk-moderate">--</div>
+    </div>
+    
+    <div class="risk-card risk-high">
+        <div class="risk-label">High Risk</div>
+        <div class="risk-value" id="risk-high">--</div>
+    </div>
+    
+    <div class="risk-card risk-critical">
+        <div class="risk-label">Critical Risk</div>
+        <div class="risk-value" id="risk-critical">--</div>
+    </div>
+</div>
+
+<!-- Charts Section -->
+<div class="charts-grid">
+    <div class="chart-card">
+        <h3 class="chart-title">Risk Distribution</h3>
+        <div class="chart-container">
+            <canvas id="risk-pie-chart"></canvas>
+        </div>
+    </div>
+    
+    <div class="chart-card chart-wide">
+        <h3 class="chart-title">Risk Trend (Last 7 Days)</h3>
+        <div class="chart-container">
+            <canvas id="risk-trend-chart"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Stats Table -->
+<div class="stats-section">
+    <h3 class="section-title">Quick Statistics</h3>
+    <div class="stats-grid">
+        <div class="stat-item">
+            <div class="stat-label">Average Assessments per Mother</div>
+            <div class="stat-value" id="avg-assessments">--</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-label">Mothers per ASHA Worker</div>
+            <div class="stat-value" id="mothers-per-asha">--</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-label">High Risk Detection Rate</div>
+            <div class="stat-value" id="high-risk-rate">--</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let riskPieChart = null;
+let riskTrendChart = null;
+
+// Load dashboard data
+async function loadDashboardData() {
+    try {
+        const response = await fetch('/admin/analytics');
+        const data = await response.json();
+        
+        // Update KPI cards
+        document.getElementById('total-mothers').textContent = data.total_mothers;
+        document.getElementById('total-asha').textContent = data.total_asha;
+        document.getElementById('total-doctors').textContent = data.total_doctors;
+        document.getElementById('total-assessments').textContent = data.total_assessments;
+        
+        // Update risk cards
+        document.getElementById('risk-low').textContent = data.risk_distribution.LOW || 0;
+        document.getElementById('risk-moderate').textContent = data.risk_distribution.MODERATE || 0;
+        document.getElementById('risk-high').textContent = data.risk_distribution.HIGH || 0;
+        document.getElementById('risk-critical').textContent = data.risk_distribution.CRITICAL || 0;
+        
+        // Update quick stats
+        const avgAssessments = data.total_mothers > 0 
+            ? (data.total_assessments / data.total_mothers).toFixed(1) 
+            : 0;
+        document.getElementById('avg-assessments').textContent = avgAssessments;
+        
+        const mothersPerAsha = data.total_asha > 0 
+            ? Math.round(data.total_mothers / data.total_asha) 
+            : 0;
+        document.getElementById('mothers-per-asha').textContent = mothersPerAsha;
+        
+        const highRiskCount = (data.risk_distribution.HIGH || 0) + (data.risk_distribution.CRITICAL || 0);
+        const highRiskRate = data.total_assessments > 0 
+            ? ((highRiskCount / data.total_assessments) * 100).toFixed(1) + '%'
+            : '0%';
+        document.getElementById('high-risk-rate').textContent = highRiskRate;
+        
+        // Update charts
+        updateRiskPieChart(data.risk_distribution);
+        updateRiskTrendChart(data.risk_trend);
+        
+        // Update timestamp
+        document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+        
+    } catch (error) {
+        console.error('Failed to load dashboard data:', error);
+        showAlert('Failed to load dashboard data', 'error');
+    }
+}
+
+// Initialize risk pie chart
+function updateRiskPieChart(riskDistribution) {
+    const ctx = document.getElementById('risk-pie-chart');
+    
+    if (riskPieChart) {
+        riskPieChart.destroy();
+    }
+    
+    riskPieChart = new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: ['Low Risk', 'Moderate Risk', 'High Risk', 'Critical Risk'],
+            datasets: [{
+                data: [
+                    riskDistribution.LOW || 0,
+                    riskDistribution.MODERATE || 0,
+                    riskDistribution.HIGH || 0,
+                    riskDistribution.CRITICAL || 0
+                ],
+                backgroundColor: [
+                    '#4ade80',
+                    '#fbbf24',
+                    '#f97316',
+                    '#dc2626'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+}
+
+// Initialize risk trend chart
+function updateRiskTrendChart(trendData) {
+    const ctx = document.getElementById('risk-trend-chart');
+    
+    if (riskTrendChart) {
+        riskTrendChart.destroy();
+    }
+    
+    riskTrendChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: trendData.map(d => d.date),
+            datasets: [
+                {
+                    label: 'Low Risk',
+                    data: trendData.map(d => d.low),
+                    borderColor: '#4ade80',
+                    backgroundColor: '#4ade8020',
+                    fill: true
+                },
+                {
+                    label: 'Moderate Risk',
+                    data: trendData.map(d => d.moderate),
+                    borderColor: '#fbbf24',
+                    backgroundColor: '#fbbf2420',
+                    fill: true
+                },
+                {
+                    label: 'High Risk',
+                    data: trendData.map(d => d.high),
+                    borderColor: '#f97316',
+                    backgroundColor: '#f9731620',
+                    fill: true
+                },
+                {
+                    label: 'Critical Risk',
+                    data: trendData.map(d => d.critical),
+                    borderColor: '#dc2626',
+                    backgroundColor: '#dc262620',
+                    fill: true
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Load data on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadDashboardData();
+    
+    // Refresh every 30 seconds
+    setInterval(loadDashboardData, 30000);
+});
+</script>
+{% endblock %}

@@ -1,0 +1,239 @@
+{% extends "admin/base.html" %}
+
+{% block page_title %}Mothers Management{% endblock %}
+
+{% block content %}
+<div class="page-actions">
+    <button class="btn btn-primary" onclick="loadMothersData()"><i class="fa-solid fa-sync"></i> Refresh Data</button>
+</div>
+
+<!-- Mothers Table -->
+<div class="table-card">
+    <h3 class="table-title">Registered Mothers</h3>
+    <div class="table-responsive">
+        <table class="data-table" id="mothers-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Age</th>
+                    <th>Location</th>
+                    <th>Gestational Age</th>
+                    <th>Current Risk</th>
+                    <th>Assigned ASHA</th>
+                    <th>Assigned Doctor</th>
+                    <th>Registration</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="mothers-table-body">
+                <tr>
+                    <td colspan="9" class="text-center">Loading...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Assignment Modal -->
+<div id="assignment-modal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i class="fa-solid fa-user-gear"></i> Update Assignments</h3>
+            <button class="modal-close" onclick="closeAssignmentModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="assign-mother-id">
+            
+            <div class="form-group">
+                <label>Mother Name:</label>
+                <div id="assign-mother-name" class="form-value"></div>
+            </div>
+            
+            <div class="form-group">
+                <label for="assign-asha">Assign ASHA Worker:</label>
+                <select id="assign-asha" class="form-control">
+                    <option value="">-- Select ASHA --</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="assign-doctor">Assign Doctor:</label>
+                <select id="assign-doctor" class="form-control">
+                    <option value="">-- Select Doctor --</option>
+                </select>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeAssignmentModal()">Cancel</button>
+            <button class="btn btn-sakura" onclick="saveAssignment()">Save Assignment</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let mothersData = [];
+let ashaWorkers = [];
+let doctors = [];
+
+// Load mothers data
+async function loadMothersData() {
+    try {
+        // Load mothers
+        const mothersResponse = await fetch('/admin/mothers');
+        mothersData = await mothersResponse.json();
+        
+        // Load ASHA workers
+        const ashaResponse = await fetch('/admin/asha');
+        ashaWorkers = await ashaResponse.json();
+        
+        // Load doctors
+        const doctorsResponse = await fetch('/admin/doctors');
+        doctors = await doctorsResponse.json();
+        
+        renderMothersTable();
+        updateTimestamp();
+        
+    } catch (error) {
+        console.error('Failed to load mothers data:', error);
+        showAlert('Failed to load mothers data', 'error');
+    }
+}
+
+// Render mothers table
+function renderMothersTable() {
+    const tbody = document.getElementById('mothers-table-body');
+    
+    if (mothersData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center">No mothers registered</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = mothersData.map(mother => {
+        const riskClass = getRiskClass(mother.current_risk);
+        const riskBadge = `<span class="badge badge-${riskClass}">${mother.current_risk}</span>`;
+        
+        // Registration badge
+        const isTelegram = mother.registered_via === 'telegram';
+        const regBadge = isTelegram 
+            ? '<span class="badge badge-info" title="Registered via Telegram"><i class="fa-brands fa-telegram"></i> Telegram</span>'
+            : '<span class="badge badge-secondary"><i class="fa-solid fa-keyboard"></i> Manual</span>';
+        
+        // Location display
+        const location = mother.location || `${mother.village || 'N/A'} / ${mother.district || 'N/A'}`;
+        
+        return `
+            <tr>
+                <td>
+                    <strong>${mother.name}</strong>
+                    ${isTelegram ? '<br><small style="color: var(--text-muted);"><i class="fa-solid fa-robot"></i> Self-registered</small>' : ''}
+                </td>
+                <td>${mother.age}</td>
+                <td>${location}</td>
+                <td>${mother.gestational_age_weeks || 'N/A'} weeks</td>
+                <td>${riskBadge}</td>
+                <td>${mother.assigned_asha_name || '<em>Not assigned</em>'}</td>
+                <td>${mother.assigned_doctor_name || '<em>Not assigned</em>'}</td>
+                <td>${regBadge}</td>
+                <td>
+                    <button class="btn btn-sm btn-sakura" onclick="openAssignmentModal('${mother._id}')">
+                        <i class="fa-solid fa-user-pen"></i> Assign
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// Get risk CSS class
+function getRiskClass(risk) {
+    const classes = {
+        'LOW': 'success',
+        'MODERATE': 'warning',
+        'HIGH': 'danger',
+        'CRITICAL': 'critical'
+    };
+    return classes[risk] || 'secondary';
+}
+
+// Open assignment modal
+function openAssignmentModal(motherId) {
+    const mother = mothersData.find(m => m._id === motherId);
+    if (!mother) return;
+    
+    // Populate modal
+    document.getElementById('assign-mother-id').value = motherId;
+    document.getElementById('assign-mother-name').textContent = mother.name;
+    
+    // Populate ASHA dropdown
+    const ashaSelect = document.getElementById('assign-asha');
+    ashaSelect.innerHTML = '<option value="">-- Select ASHA --</option>' +
+        ashaWorkers.map(asha => 
+            `<option value="${asha._id}" ${asha._id === mother.assigned_asha_id ? 'selected' : ''}>
+                ${asha.name} (${asha.area})
+            </option>`
+        ).join('');
+    
+    // Populate doctor dropdown
+    const doctorSelect = document.getElementById('assign-doctor');
+    doctorSelect.innerHTML = '<option value="">-- Select Doctor --</option>' +
+        doctors.map(doctor => 
+            `<option value="${doctor._id}" ${doctor._id === mother.assigned_doctor_id ? 'selected' : ''}>
+                ${doctor.name} (${doctor.hospital})
+            </option>`
+        ).join('');
+    
+    // Show modal
+    document.getElementById('assignment-modal').style.display = 'flex';
+}
+
+// Close assignment modal
+function closeAssignmentModal() {
+    document.getElementById('assignment-modal').style.display = 'none';
+}
+
+// Save assignment
+async function saveAssignment() {
+    const motherId = document.getElementById('assign-mother-id').value;
+    const ashaId = document.getElementById('assign-asha').value;
+    const doctorId = document.getElementById('assign-doctor').value;
+    
+    if (!ashaId && !doctorId) {
+        showAlert('Please select at least one assignment', 'warning');
+        return;
+    }
+    
+    try {
+        const payload = { mother_id: motherId };
+        if (ashaId) payload.asha_id = ashaId;
+        if (doctorId) payload.doctor_id = doctorId;
+        
+        const response = await fetch('/admin/assign', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            showAlert('Assignment updated successfully', 'success');
+            closeAssignmentModal();
+            loadMothersData(); // Refresh table
+        } else {
+            showAlert(result.error || 'Assignment failed', 'error');
+        }
+        
+    } catch (error) {
+        console.error('Assignment failed:', error);
+        showAlert('Assignment failed', 'error');
+    }
+}
+
+// Load data on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadMothersData();
+});
+</script>
+{% endblock %}

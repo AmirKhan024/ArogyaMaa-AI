@@ -1,0 +1,235 @@
+{% extends "admin/base.html" %}
+
+{% block page_title %}ASHA Workers Overview{% endblock %}
+
+{% block content %}
+<div class="page-actions">
+    <button class="btn btn-sakura" onclick="openAddAshaModal()"><i class="fa-solid fa-plus"></i> Add ASHA Worker</button>
+    <button class="btn btn-secondary" onclick="loadAshaData()"><i class="fa-solid fa-rotate"></i> Refresh Data</button>
+</div>
+
+<!-- Add ASHA Modal -->
+<div id="addAshaModal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 600px;">
+        <div class="modal-header">
+            <h3><i class="fa-solid fa-user-nurse"></i> Register New ASHA Worker</h3>
+            <button class="modal-close" onclick="closeAddAshaModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="addAshaForm" onsubmit="submitAsha(event)">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div class="form-group">
+                        <label>Full Name</label>
+                        <input type="text" name="name" class="form-control" required placeholder="e.g. Suman Devi">
+                    </div>
+                    <div class="form-group">
+                        <label>Age</label>
+                        <input type="number" name="age" class="form-control" required placeholder="e.g. 32">
+                    </div>
+                    <div class="form-group">
+                        <label>Phone Number</label>
+                        <input type="tel" name="phone" class="form-control" required placeholder="10-digit mobile">
+                    </div>
+                    <div class="form-group">
+                        <label>Languages Spoken</label>
+                        <input type="text" name="languages" class="form-control" placeholder="e.g. Hindi, Bhojpuri">
+                    </div>
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label>Full Address</label>
+                        <textarea name="address" rows="2" class="form-control" placeholder="Street, landmark details"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Village</label>
+                        <input type="text" name="village" class="form-control" required placeholder="Village name">
+                    </div>
+                    <div class="form-group">
+                        <label>Block</label>
+                        <input type="text" name="block" class="form-control" required placeholder="e.g. Ramnagar">
+                    </div>
+                    <div class="form-group">
+                        <label>Area / Sector</label>
+                        <input type="text" name="area" class="form-control" required placeholder="e.g. Sector 4">
+                    </div>
+                    <div class="form-group">
+                        <label>District</label>
+                        <input type="text" name="district" class="form-control" required placeholder="e.g. Varanasi">
+                    </div>
+                    
+                    <div style="grid-column: span 2; margin-top: 0.5rem; border-top: 1px solid var(--border-color); padding-top: 1rem;">
+                        <h4 style="margin-bottom: 0.75rem; color: var(--sakura-600); font-size: 0.9rem;">Portal Access Credentials</h4>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Username</label>
+                        <input type="text" name="username" class="form-control" required placeholder="Login ID">
+                    </div>
+                    <div class="form-group">
+                        <label>Password</label>
+                        <input type="password" name="password" class="form-control" required placeholder="Min 6 characters">
+                    </div>
+                </div>
+                
+                <div class="modal-footer" style="padding: 1.5rem 0 0 0; border: none;">
+                    <button type="button" class="btn btn-secondary" onclick="closeAddAshaModal()">Cancel</button>
+                    <button type="submit" class="btn btn-sakura">Register ASHA Worker</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ASHA Workers Table -->
+<div class="table-card">
+    <h3 class="table-title">ASHA Workers Performance</h3>
+    <div class="table-responsive">
+        <table class="data-table" id="asha-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Area</th>
+                    <th>District</th>
+                    <th>Phone</th>
+                    <th>Assigned Mothers</th>
+                    <th>Total Assessments</th>
+                    <th>High Risk Detected</th>
+                    <th>Performance</th>
+                </tr>
+            </thead>
+            <tbody id="asha-table-body">
+                <tr>
+                    <td colspan="8" class="text-center">Loading...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Performance Legend -->
+<div class="legend-card">
+    <h4>Performance Indicators</h4>
+    <div class="legend-items">
+        <div class="legend-item">
+            <span class="badge badge-success">Good</span>
+            <span>2+ assessments per mother</span>
+        </div>
+        <div class="legend-item">
+            <span class="badge badge-warning">Moderate</span>
+            <span>1+ assessments per mother</span>
+        </div>
+        <div class="legend-item">
+            <span class="badge badge-danger">Needs Attention</span>
+            <span>Less than 1 assessment per mother</span>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let ashaData = [];
+
+// Load ASHA data
+async function loadAshaData() {
+    try {
+        const response = await fetch('/admin/asha');
+        ashaData = await response.json();
+        
+        renderAshaTable();
+        updateTimestamp();
+        
+    } catch (error) {
+        console.error('Failed to load ASHA data:', error);
+        showAlert('Failed to load ASHA data', 'error');
+    }
+}
+
+// Render ASHA table
+function renderAshaTable() {
+    const tbody = document.getElementById('asha-table-body');
+    
+    if (ashaData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center">No ASHA workers registered</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = ashaData.map(asha => {
+        const performanceBadge = getPerformanceBadge(asha.performance);
+        
+        return `
+            <tr>
+                <td><strong>${asha.name}</strong></td>
+                <td>${asha.area}</td>
+                <td>${asha.district}</td>
+                <td>${asha.phone}</td>
+                <td class="text-center">${asha.assigned_mothers_count}</td>
+                <td class="text-center">${asha.total_assessments}</td>
+                <td class="text-center">
+                    <span class="badge badge-danger">${asha.high_risk_detected}</span>
+                </td>
+                <td>${performanceBadge}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// Get performance badge
+function getPerformanceBadge(performance) {
+    const badgeMap = {
+        'Good': '<span class="badge badge-success">Good</span>',
+        'Moderate': '<span class="badge badge-warning">Moderate</span>',
+        'Needs Attention': '<span class="badge badge-danger">Needs Attention</span>',
+        'No Assignments': '<span class="badge badge-secondary">No Assignments</span>'
+    };
+    return badgeMap[performance] || '<span class="badge badge-secondary">Unknown</span>';
+}
+
+// Modal control
+function openAddAshaModal() {
+    document.getElementById('addAshaModal').style.display = 'flex';
+}
+
+function closeAddAshaModal() {
+    document.getElementById('addAshaModal').style.display = 'none';
+}
+
+// Submit ASHA registration
+async function submitAsha(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData.entries());
+    
+    try {
+        const response = await fetch('/admin/asha', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        
+        const result = await response.json();
+        if (response.ok) {
+            alert('ASHA Worker registered successfully!');
+            closeAddAshaModal();
+            form.reset();
+            loadAshaData();
+        } else {
+            alert(result.error || 'Failed to register ASHA worker');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('An error occurred. Please try again.');
+    }
+}
+
+// Load data on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadAshaData();
+    
+    // Check for "action=add" in URL
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('action') === 'add') {
+        openAddAshaModal();
+    }
+});
+</script>
+{% endblock %}
