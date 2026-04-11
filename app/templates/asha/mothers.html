@@ -1,0 +1,353 @@
+{% extends "asha/base.html" %}
+
+{% block page_title %}My Mothers{% endblock %}
+
+{% block content %}
+<div class="page-actions">
+    <button class="btn btn-primary" onclick="loadMothersData()">Refresh Data</button>
+    <a href="{{ url_for('asha_dashboard.new_assessment', asha_id=asha_id) }}" class="btn btn-primary">New Assessment</a>
+</div>
+
+<!-- Mothers Table -->
+<div class="table-card">
+    <h3 class="table-title">My Assigned Mothers</h3>
+    <div class="table-responsive">
+        <table class="data-table" id="mothers-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Age</th>
+                    <th>Phone</th>
+                    <th>Gestational Age</th>
+                    <th>Current Risk</th>
+                    <th>Last Assessment</th>
+                    <th>Total Assessments</th>
+                    <th>Doctor</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="mothers-table-body">
+                <tr>
+                    <td colspan="9" class="text-center">Loading...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Info Card -->
+<div class="info-card">
+    <h4>About Risk Levels</h4>
+    <p>
+        <strong>LOW:</strong> Normal pregnancy progression<br>
+        <strong>MODERATE:</strong> Requires monitoring<br>
+        <strong>HIGH:</strong> Immediate medical attention needed<br>
+        <strong>CRITICAL:</strong> Emergency intervention required
+    </p>
+</div>
+
+<!-- Upload Document Modal -->
+<div id="uploadModal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 600px;">
+        <span class="close" onclick="closeUploadModal()">&times;</span>
+        <h3>Upload Medical Document</h3>
+        <p id="modalMotherName"></p>
+        
+        <form id="uploadForm" onsubmit="submitDocument(event)">
+            <input type="hidden" id="selectedMotherId">
+            
+            <div class="form-group">
+                <label for="documentType">Document Type</label>
+                <select id="documentType" name="document_type" required class="form-control">
+                    <option value="">-- Select Type --</option>
+                    <option value="lab_report">Lab Report (Blood Test, Urine Test)</option>
+                    <option value="ultrasound">Ultrasound Scan</option>
+                    <option value="prescription">Prescription</option>
+                    <option value="xray">X-Ray</option>
+                    <option value="other">Other Medical Document</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="documentFile">Select File</label>
+                <input type="file" id="documentFile" name="file" required accept="image/*,.pdf" class="form-control">
+                <small>Supported: Images (JPG, PNG) and PDF files</small>
+            </div>
+            
+            <div class="form-group">
+                <label for="description">Description</label>
+                <textarea id="description" name="description" rows="3" class="form-control" placeholder="Brief description of the document (e.g., 'Hemoglobin test results from 25-Dec-2025')"></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="analyzeWithAI" name="analyze_with_ai" checked>
+                    Analyze document with AI (extract key findings)
+                </label>
+            </div>
+            
+            <div id="uploadProgress" style="display: none;">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <p id="uploadStatus">Uploading...</p>
+            </div>
+            
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary" id="uploadBtn">Upload Document</button>
+                <button type="button" class="btn btn-secondary" onclick="closeUploadModal()">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0,0,0,0.5);
+}
+
+.modal-content {
+    background-color: #fefefe;
+    margin: 5% auto;
+    padding: 30px;
+    border: 1px solid #888;
+    border-radius: 8px;
+    max-width: 600px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.close {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.close:hover {
+    color: #000;
+}
+
+.progress-bar {
+    width: 100%;
+    background-color: #f0f0f0;
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 10px 0;
+}
+
+.progress-fill {
+    height: 30px;
+    background-color: #4CAF50;
+    width: 0%;
+    transition: width 0.3s;
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let mothersData = [];
+
+// Check if ASHA ID is set
+if (!ASHA_ID || ASHA_ID === '') {
+    showAlert('Please provide ASHA ID in URL', 'warning');
+}
+
+// Load mothers data
+async function loadMothersData() {
+    if (!ASHA_ID) return;
+    
+    try {
+        const response = await fetch(`/asha/mothers?asha_id=${ASHA_ID}`);
+        const data = await response.json();
+        
+        if (!response.ok) throw new Error(data.error || 'Failed to load mothers');
+        
+        mothersData = data.mothers || [];
+        renderMothersTable();
+        updateTimestamp();
+        
+    } catch (error) {
+        console.error('Failed to load mothers data:', error);
+        showAlert('Failed to load mothers data', 'error');
+        
+        const tbody = document.getElementById('mothers-table-body');
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center">Error loading patient records</td></tr>';
+    }
+}
+
+// Render mothers table
+function renderMothersTable() {
+    const tbody = document.getElementById('mothers-table-body');
+    
+    if (mothersData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center">No mothers assigned yet</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = mothersData.map(mother => {
+        const currentRisk = mother.current_risk || 'N/A';
+        const lastAssessmentDate = mother.last_assessment_date 
+            ? new Date(mother.last_assessment_date).toLocaleDateString()
+            : 'Never';
+        const totalAssessments = mother.total_assessments || 0;
+        
+        const riskClass = getRiskClass(currentRisk);
+        const riskBadge = currentRisk !== 'N/A' 
+            ? `<span class="badge badge-${riskClass}">${currentRisk}</span>`
+            : '<em>Pending</em>';
+        
+        const gestationalAge = mother.gestational_age_weeks 
+            ? `${mother.gestational_age_weeks} weeks`
+            : 'N/A';
+
+        const doctorName = mother.doctor_name || 'Not Assigned';
+        
+        return `
+            <tr>
+                <td>
+                    <div class="patient-name-cell">
+                        <strong>${mother.name}</strong>
+                        <a href="{{ url_for('asha_dashboard.patient_profile', mother_id='') }}${mother.mother_id}" class="view-profile-link">
+                            <i class="fa-solid fa-id-card"></i> View Profile
+                        </a>
+                    </div>
+                </td>
+                <td>${mother.age}</td>
+                <td>${mother.phone}</td>
+                <td>${gestationalAge}</td>
+                <td>${riskBadge}</td>
+                <td>${lastAssessmentDate}</td>
+                <td class="text-center">${totalAssessments}</td>
+                <td><strong>${doctorName}</strong></td>
+                <td>
+                    <div class="action-stack">
+                        <a href="{{ url_for('asha_dashboard.new_assessment', asha_id=asha_id) }}&mother_id=${mother.mother_id}" class="btn btn-sakura btn-sm">
+                            <i class="fa-solid fa-file-medical"></i> Assess
+                        </a>
+                        <button class="btn btn-sakura btn-sm" onclick="openUploadModal('${mother.mother_id}', '${mother.name}')">
+                            <i class="fa-solid fa-cloud-arrow-up"></i> Upload
+                        </button>
+                        <a href="{{ url_for('asha_dashboard.view_documents') }}?mother_id=${mother.mother_id}&asha_id=${ASHA_ID}" class="btn btn-sakura btn-sm">
+                            <i class="fa-solid fa-folder-open"></i> Documents
+                        </a>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// Get risk CSS class
+function getRiskClass(risk) {
+    const classes = {
+        'LOW': 'success',
+        'MODERATE': 'warning',
+        'HIGH': 'danger',
+        'CRITICAL': 'critical'
+    };
+    return classes[risk] || 'secondary';
+}
+
+// Load data on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadMothersData();
+});
+
+// Upload Modal Functions
+let selectedMotherForUpload = null;
+
+function openUploadModal(motherId, motherName) {
+    selectedMotherForUpload = motherId;
+    document.getElementById('selectedMotherId').value = motherId;
+    document.getElementById('modalMotherName').textContent = `Uploading document for: ${motherName}`;
+    document.getElementById('uploadModal').style.display = 'block';
+    document.getElementById('uploadForm').reset();
+    document.getElementById('uploadProgress').style.display = 'none';
+}
+
+function closeUploadModal() {
+    document.getElementById('uploadModal').style.display = 'none';
+    selectedMotherForUpload = null;
+}
+
+async function submitDocument(event) {
+    event.preventDefault();
+    
+    const motherId = document.getElementById('selectedMotherId').value;
+    const documentType = document.getElementById('documentType').value;
+    const description = document.getElementById('description').value;
+    const analyzeWithAI = document.getElementById('analyzeWithAI').checked;
+    const fileInput = document.getElementById('documentFile');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        showAlert('Please select a file', 'error');
+        return;
+    }
+    
+    // Show progress
+    document.getElementById('uploadProgress').style.display = 'block';
+    document.getElementById('uploadBtn').disabled = true;
+    document.getElementById('uploadStatus').textContent = 'Uploading document...';
+    document.getElementById('progressFill').style.width = '30%';
+    
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('mother_id', motherId);
+        formData.append('asha_id', ASHA_ID);
+        formData.append('document_type', documentType);
+        formData.append('description', description);
+        formData.append('analyze_with_ai', analyzeWithAI);
+        
+        document.getElementById('progressFill').style.width = '60%';
+        
+        const response = await fetch('/asha/upload-document', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(result.error || 'Upload failed');
+        }
+        
+        document.getElementById('progressFill').style.width = '100%';
+        document.getElementById('uploadStatus').textContent = 'Upload successful!';
+        
+        showAlert('Document uploaded successfully! ' + (result.ai_analysis ? 'AI analysis completed.' : ''), 'success');
+        
+        setTimeout(() => {
+            closeUploadModal();
+            loadMothersData();
+        }, 1500);
+        
+    } catch (error) {
+        console.error('Upload error:', error);
+        showAlert('Upload failed: ' + error.message, 'error');
+        document.getElementById('uploadStatus').textContent = 'Upload failed';
+    } finally {
+        document.getElementById('uploadBtn').disabled = false;
+    }
+}
+
+// Close modal when clicking outside
+window.onclick = function(event) {
+    const modal = document.getElementById('uploadModal');
+    if (event.target == modal) {
+        closeUploadModal();
+    }
+}
+</script>
+{% endblock %}

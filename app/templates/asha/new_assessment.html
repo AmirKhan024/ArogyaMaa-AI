@@ -1,0 +1,371 @@
+{% extends "asha/base.html" %}
+
+{% block page_title %}New Assessment{% endblock %}
+
+{% block content %}
+<div class="page-actions">
+    <a href="{{ url_for('asha_dashboard.mothers', asha_id=asha_id) }}" class="btn btn-secondary"><i class="fa-solid fa-arrow-left"></i> Back to Mothers</a>
+</div>
+
+<!-- Assessment Form -->
+<div class="table-card">
+    <h3 class="table-title">Health Assessment Form</h3>
+    
+    <form id="assessment-form" style="max-width: 800px; margin: 0 auto;">
+        <!-- Mother Selection -->
+        <div class="form-group">
+            <label for="mother-select">Select Mother <span style="color: red;">*</span></label>
+            <select id="mother-select" class="form-control" required>
+                <option value="">-- Select Mother --</option>
+            </select>
+        </div>
+        
+        <div id="mother-info" style="display: none; padding: 1rem; background: #f0f9ff; border-radius: 0.5rem; margin-bottom: 1.5rem;">
+            <h4 style="margin-bottom: 0.5rem;">Mother Information</h4>
+            <div id="mother-details"></div>
+        </div>
+        
+        <!-- Vitals Section -->
+        <h4 style="margin: 1.5rem 0 1rem;">Vital Signs</h4>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+                <label for="bp-systolic">Blood Pressure - Systolic (mmHg) <span style="color: red;">*</span></label>
+                <input type="number" id="bp-systolic" class="form-control" placeholder="120" min="70" max="200" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="bp-diastolic">Blood Pressure - Diastolic (mmHg) <span style="color: red;">*</span></label>
+                <input type="number" id="bp-diastolic" class="form-control" placeholder="80" min="40" max="140" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="heart-rate">Heart Rate (bpm) <span style="color: red;">*</span></label>
+                <input type="number" id="heart-rate" class="form-control" placeholder="72" min="40" max="160" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="weight">Weight (kg) <span style="color: red;">*</span></label>
+                <input type="number" id="weight" class="form-control" step="0.1" placeholder="60.5" min="30" max="150" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="glucose">Glucose Level (mg/dL)</label>
+                <input type="number" id="glucose" class="form-control" placeholder="90" min="50" max="400">
+            </div>
+            
+            <div class="form-group">
+                <label for="hemoglobin">Hemoglobin (g/dL)</label>
+                <input type="number" id="hemoglobin" class="form-control" step="0.1" placeholder="12.5" min="5" max="20">
+            </div>
+        </div>
+        
+        <!-- Symptoms Section -->
+        <h4 style="margin: 1.5rem 0 1rem;">Symptoms</h4>
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; margin-bottom: 1.5rem;">
+            <label class="checkbox-label">
+                <input type="checkbox" name="symptoms" value="fever"> Fever
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" name="symptoms" value="headache"> Headache
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" name="symptoms" value="nausea"> Nausea
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" name="symptoms" value="vomiting"> Vomiting
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" name="symptoms" value="abdominal_pain"> Abdominal Pain
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" name="symptoms" value="bleeding"> Bleeding
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" name="symptoms" value="swelling"> Swelling (Edema)
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" name="symptoms" value="decreased_fetal_movement"> Decreased Fetal Movement
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" name="symptoms" value="discharge"> Unusual Discharge
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" name="symptoms" value="contractions"> Contractions
+            </label>
+        </div>
+        
+        <!-- Notes -->
+        <div class="form-group">
+            <label for="notes">Notes / Observations</label>
+            <textarea id="notes" class="form-control" rows="4" placeholder="Any additional observations or concerns..."></textarea>
+        </div>
+        
+        <!-- Submit Button -->
+        <div style="margin-top: 2rem;">
+            <button type="submit" class="btn btn-sakura" id="submit-btn">
+                Submit Assessment
+            </button>
+            <button type="button" class="btn btn-secondary" onclick="resetForm()">
+                Clear Form
+            </button>
+        </div>
+    </form>
+</div>
+
+<!-- Result Modal -->
+<div id="result-modal" class="modal">
+    <div class="modal-content" style="max-width: 600px;">
+        <div class="modal-header">
+            <h3><i class="fa-solid fa-clipboard-check"></i> Assessment Result</h3>
+            <button class="modal-close" onclick="closeResultModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="result-content"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeResultModal()">Close</button>
+            <a href="{{ url_for('asha_dashboard.mothers', asha_id=asha_id) }}" class="btn btn-sakura">View Mothers</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let mothersData = [];
+
+// Check if ASHA ID is set
+if (!ASHA_ID || ASHA_ID === '') {
+    showAlert('Please provide ASHA ID in URL: ?asha_id=<your_id>', 'warning');
+}
+
+// Load mothers for dropdown
+async function loadMothers() {
+    if (!ASHA_ID) return;
+    
+    try {
+        const response = await fetch(`/asha/mothers?asha_id=${ASHA_ID}`);
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to load mothers');
+        }
+        
+        // Extract mothers array from response
+        mothersData = data.mothers || [];
+        
+        if (!response.ok) {
+            throw new Error(mothersData.error || 'Failed to load mothers');
+        }
+        
+        const select = document.getElementById('mother-select');
+        select.innerHTML = '<option value="">-- Select Mother --</option>' +
+            mothersData.map(mother => 
+                `<option value="${mother.mother_id}">${mother.name} (Age: ${mother.age})</option>`
+            ).join('');
+        
+        // Pre-select if mother_id in URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const motherId = urlParams.get('mother_id');
+        if (motherId) {
+            select.value = motherId;
+            showMotherInfo(motherId);
+        }
+        
+    } catch (error) {
+        console.error('Failed to load mothers:', error);
+        showAlert('Failed to load mothers: ' + error.message, 'error');
+    }
+}
+
+// Show mother information
+function showMotherInfo(motherId) {
+    const mother = mothersData.find(m => m.mother_id === motherId);
+    if (!mother) return;
+    
+    const gestationalAge = mother.gestational_age_weeks || 'N/A';
+    const edd = mother.edd 
+        ? new Date(mother.edd).toLocaleDateString()
+        : 'N/A';
+    
+    document.getElementById('mother-details').innerHTML = `
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem;">
+            <div><strong>Name:</strong> ${mother.name}</div>
+            <div><strong>Age:</strong> ${mother.age} years</div>
+            <div><strong>Phone:</strong> ${mother.phone}</div>
+            <div><strong>Gestational Age:</strong> ${gestationalAge} weeks</div>
+            <div><strong>EDD:</strong> ${edd}</div>
+            <div><strong>Village:</strong> ${mother.village || 'N/A'}</div>
+        </div>
+    `;
+    document.getElementById('mother-info').style.display = 'block';
+}
+
+// Handle mother selection
+document.getElementById('mother-select').addEventListener('change', (e) => {
+    if (e.target.value) {
+        showMotherInfo(e.target.value);
+    } else {
+        document.getElementById('mother-info').style.display = 'none';
+    }
+});
+
+// Handle form submission
+document.getElementById('assessment-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const motherId = document.getElementById('mother-select').value;
+    if (!motherId) {
+        showAlert('Please select a mother', 'warning');
+        return;
+    }
+    
+    // Collect symptoms
+    const symptoms = Array.from(document.querySelectorAll('input[name="symptoms"]:checked'))
+        .map(cb => cb.value);
+    
+    // Build assessment payload
+    const payload = {
+        asha_id: ASHA_ID,
+        mother_id: motherId,
+        vitals: {
+            bp_systolic: parseInt(document.getElementById('bp-systolic').value),
+            bp_diastolic: parseInt(document.getElementById('bp-diastolic').value),
+            heart_rate: parseInt(document.getElementById('heart-rate').value),
+            weight_kg: parseFloat(document.getElementById('weight').value)
+        },
+        symptoms: symptoms,
+        asha_notes: document.getElementById('notes').value || ''
+    };
+    
+    // Add optional vitals if provided
+    const glucose = document.getElementById('glucose').value;
+    const hemoglobin = document.getElementById('hemoglobin').value;
+    
+    if (glucose) payload.vitals.glucose_mg_dl = parseFloat(glucose);
+    if (hemoglobin) payload.vitals.hemoglobin_g_dl = parseFloat(hemoglobin);
+    
+    // Submit assessment
+    const submitBtn = document.getElementById('submit-btn');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Submitting...';
+    
+    try {
+        const response = await fetch('/asha/assessment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            showAssessmentResult(result);
+            resetForm();
+        } else {
+            throw new Error(result.error || 'Assessment submission failed');
+        }
+        
+    } catch (error) {
+        console.error('Assessment submission failed:', error);
+        showAlert('Assessment submission failed: ' + error.message, 'error');
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Submit Assessment';
+    }
+});
+
+// Show assessment result
+function showAssessmentResult(result) {
+    const aiEval = result.ai_evaluation || {};
+    const riskClass = getRiskClass(aiEval.risk_category);
+    
+    const html = `
+        <div style="text-align: center; margin-bottom: 1.5rem;">
+            <h2 style="color: var(--${riskClass === 'success' ? 'success' : riskClass === 'warning' ? 'warning' : 'danger'}-color);">
+                ${aiEval.risk_category || 'UNKNOWN'} RISK
+            </h2>
+            <div style="font-size: 3rem; font-weight: bold;">
+                ${aiEval.risk_score || 'N/A'}/100
+            </div>
+        </div>
+        
+        <div style="margin-bottom: 1rem;">
+            <strong>Assessment ID:</strong> ${result.assessment_id}
+        </div>
+        
+        ${aiEval.recommended_actions && aiEval.recommended_actions.length > 0 ? `
+            <div style="margin-bottom: 1rem;">
+                <strong>Recommended Actions:</strong>
+                <ul style="margin: 0.5rem 0; padding-left: 1.5rem;">
+                    ${aiEval.recommended_actions.map(action => {
+                        // Handle if action is object with 'action' property or just string
+                        const actionText = typeof action === 'string' ? action : (action.action || JSON.stringify(action));
+                        return `<li>${actionText}</li>`;
+                    }).join('')}
+                </ul>
+            </div>
+        ` : ''}
+        
+        ${result.alerts_sent ? `
+            <div style="padding: 1rem; background: rgba(39, 174, 96, 0.1); border-radius: 0.5rem; margin-top: 1rem; color: var(--success-color); border: 1px solid var(--success-color);">
+                <strong><i class="fa-solid fa-circle-check"></i> Alerts sent successfully</strong>
+            </div>
+        ` : ''}
+    `;
+    
+    document.getElementById('result-content').innerHTML = html;
+    document.getElementById('result-modal').style.display = 'flex';
+}
+
+// Close result modal
+function closeResultModal() {
+    document.getElementById('result-modal').style.display = 'none';
+}
+
+// Reset form
+function resetForm() {
+    document.getElementById('assessment-form').reset();
+    document.getElementById('mother-info').style.display = 'none';
+}
+
+// Get risk CSS class
+function getRiskClass(risk) {
+    const classes = {
+        'LOW': 'success',
+        'MODERATE': 'warning',
+        'HIGH': 'danger',
+        'CRITICAL': 'critical'
+    };
+    return classes[risk] || 'secondary';
+}
+
+// Load mothers on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadMothers();
+    updateTimestamp();
+});
+</script>
+
+<style>
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    padding: 0.5rem;
+    border-radius: 0.25rem;
+}
+
+.checkbox-label:hover {
+    background-color: var(--bg-color);
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: 1.25rem;
+    height: 1.25rem;
+    cursor: pointer;
+}
+</style>
+{% endblock %}

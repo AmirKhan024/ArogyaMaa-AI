@@ -1,0 +1,185 @@
+{% extends "asha/base.html" %}
+
+{% block page_title %}My Dashboard{% endblock %}
+
+{% block content %}
+<!-- KPI Cards -->
+<div class="kpi-grid">
+    <div class="kpi-card">
+        <div class="kpi-icon"><i class="fa-solid fa-users"></i></div>
+        <div class="kpi-content">
+            <div class="kpi-label">Total Mothers Assigned</div>
+            <div class="kpi-value" id="total-mothers">--</div>
+        </div>
+    </div>
+    
+    <div class="kpi-card">
+        <div class="kpi-icon"><i class="fa-solid fa-notes-medical"></i></div>
+        <div class="kpi-content">
+            <div class="kpi-label">Assessments This Week</div>
+            <div class="kpi-value" id="assessments-week">--</div>
+        </div>
+    </div>
+    
+    <div class="kpi-card">
+        <div class="kpi-icon" style="color: var(--critical-color)"><i class="fa-solid fa-triangle-exclamation"></i></div>
+        <div class="kpi-content">
+            <div class="kpi-label">High Risk Detected</div>
+            <div class="kpi-value" id="high-risk-count" style="color: var(--critical-color)">--</div>
+        </div>
+    </div>
+    
+    <div class="kpi-card">
+        <div class="kpi-icon"><i class="fa-solid fa-chart-column"></i></div>
+        <div class="kpi-content">
+            <div class="kpi-label">Total Assessments</div>
+            <div class="kpi-value" id="total-assessments">--</div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="stats-section">
+    <h3 class="section-title">Quick Actions</h3>
+    <div class="stats-grid">
+        <div class="stat-item" style="cursor: pointer;" onclick="window.location.href='{{ url_for('asha_dashboard.new_assessment', asha_id=asha_id) }}'">
+            <div class="stat-label">New Assessment</div>
+            <div class="stat-value"><i class="fa-solid fa-circle-plus" style="color: var(--sakura-pink)"></i></div>
+        </div>
+        <div class="stat-item" style="cursor: pointer;" onclick="window.location.href='{{ url_for('asha_dashboard.mothers', asha_id=asha_id) }}'">
+            <div class="stat-label">View My Mothers</div>
+            <div class="stat-value"><i class="fa-solid fa-people-group" style="color: var(--fuji-500)"></i></div>
+        </div>
+        <div class="stat-item" style="cursor: pointer;" onclick="window.location.href='{{ url_for('asha_dashboard.stats', asha_id=asha_id) }}'">
+            <div class="stat-label">View Statistics</div>
+            <div class="stat-value"><i class="fa-solid fa-chart-pie" style="color: var(--fuji-500)"></i></div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Activity -->
+<div class="table-card">
+    <h3 class="table-title">Recent Assessments</h3>
+    <div class="table-responsive">
+        <table class="data-table" id="recent-assessments-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Mother Name</th>
+                    <th>Risk Level</th>
+                    <th>AI Score</th>
+                </tr>
+            </thead>
+            <tbody id="recent-assessments-body">
+                <tr>
+                    <td colspan="4" class="text-center">Loading...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Check if ASHA ID is set
+if (!ASHA_ID || ASHA_ID === '') {
+    showAlert('Please provide ASHA ID in URL: ?asha_id=<your_id>', 'warning');
+}
+
+// Load dashboard data
+async function loadDashboardData() {
+    if (!ASHA_ID) return;
+    
+    try {
+        const response = await fetch(`/asha/stats?asha_id=${ASHA_ID}`);
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to load stats');
+        }
+        
+        // Update KPI cards - use correct API structure
+        const stats = data.statistics || {};
+        const riskBreakdown = data.risk_breakdown || {};
+        
+        document.getElementById('total-mothers').textContent = stats.total_mothers_assigned || 0;
+        document.getElementById('assessments-week').textContent = stats.assessments_this_week || 0;
+        const highRiskCount = (riskBreakdown.HIGH || 0) + (riskBreakdown.CRITICAL || 0);
+        document.getElementById('high-risk-count').textContent = highRiskCount;
+        document.getElementById('total-assessments').textContent = stats.total_assessments || 0;
+        
+        // Load recent assessments
+        await loadRecentAssessments();
+        
+        updateTimestamp();
+        
+    } catch (error) {
+        console.error('Failed to load dashboard data:', error);
+        showAlert('Failed to load dashboard data: ' + error.message, 'error');
+    }
+}
+
+// Load recent assessments
+async function loadRecentAssessments() {
+    if (!ASHA_ID) return;
+    
+    try {
+        // Use recent_activity from stats API
+        const response = await fetch(`/asha/stats?asha_id=${ASHA_ID}`);
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error('Failed to load stats');
+        }
+        
+        const tbody = document.getElementById('recent-assessments-body');
+        const recentActivity = data.recent_activity || [];
+        
+        if (recentActivity.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center">No assessments yet</td></tr>';
+            return;
+        }
+        
+        tbody.innerHTML = recentActivity.map(activity => {
+            const date = new Date(activity.timestamp).toLocaleDateString();
+            const riskLevel = activity.risk?.risk_category || 'N/A';
+            const riskClass = getRiskClass(riskLevel);
+            const riskBadge = `<span class="badge badge-${riskClass}">${riskLevel}</span>`;
+            const aiScore = activity.risk?.risk_score ? `${activity.risk.risk_score}/100` : 'N/A';
+            
+            return `
+                <tr>
+                    <td>${date}</td>
+                    <td><strong>${activity.mother_name}</strong></td>
+                    <td>${riskBadge}</td>
+                    <td>${aiScore}</td>
+                </tr>
+            `;
+        }).join('');
+        
+    } catch (error) {
+        console.error('Failed to load recent assessments:', error);
+    }
+}
+
+// Get risk CSS class
+function getRiskClass(risk) {
+    const classes = {
+        'LOW': 'success',
+        'MODERATE': 'warning',
+        'HIGH': 'danger',
+        'CRITICAL': 'critical'
+    };
+    return classes[risk] || 'secondary';
+}
+
+// Load data on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadDashboardData();
+    
+    // Refresh every 60 seconds
+    setInterval(loadDashboardData, 60000);
+});
+</script>
+{% endblock %}

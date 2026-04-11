@@ -1,0 +1,255 @@
+{% extends "asha/base.html" %}
+
+{% block page_title %}My Statistics{% endblock %}
+
+{% block content %}
+<div class="page-actions">
+    <button class="btn btn-sakura" onclick="loadStatsData()"><i class="fa-solid fa-arrows-rotate"></i> Refresh Stats</button>
+</div>
+
+<!-- Summary Cards -->
+<div class="kpi-grid">
+    <div class="kpi-card">
+        <div class="kpi-icon"><i class="fa-solid fa-hospital-user"></i></div>
+        <div class="kpi-content">
+            <div class="kpi-label">Total Mothers Assigned</div>
+            <div class="kpi-value" id="stat-total-mothers">--</div>
+        </div>
+    </div>
+    
+    <div class="kpi-card">
+        <div class="kpi-icon"><i class="fa-solid fa-clipboard-list"></i></div>
+        <div class="kpi-content">
+            <div class="kpi-label">Total Assessments</div>
+            <div class="kpi-value" id="stat-total-assessments">--</div>
+        </div>
+    </div>
+    
+    <div class="kpi-card">
+        <div class="kpi-icon"><i class="fa-solid fa-calendar-week"></i></div>
+        <div class="kpi-content">
+            <div class="kpi-label">Assessments This Week</div>
+            <div class="kpi-value" id="stat-week-assessments">--</div>
+        </div>
+    </div>
+    
+    <div class="kpi-card">
+        <div class="kpi-icon"><i class="fa-solid fa-chart-line"></i></div>
+        <div class="kpi-content">
+            <div class="kpi-label">Avg Assessments/Mother</div>
+            <div class="kpi-value" id="stat-avg-assessments">--</div>
+        </div>
+    </div>
+</div>
+
+<!-- Risk Detection Stats -->
+<div class="stats-section">
+    <h3 class="section-title">Risk Detection Summary</h3>
+    <div class="risk-cards-grid">
+        <div class="risk-card risk-low">
+            <div class="risk-label">Low Risk Cases</div>
+            <div class="risk-value" id="stat-low-risk">--</div>
+        </div>
+        
+        <div class="risk-card risk-moderate">
+            <div class="risk-label">Moderate Risk Cases</div>
+            <div class="risk-value" id="stat-moderate-risk">--</div>
+        </div>
+        
+        <div class="risk-card risk-high">
+            <div class="risk-label">High Risk Cases</div>
+            <div class="risk-value" id="stat-high-risk">--</div>
+        </div>
+        
+        <div class="risk-card risk-critical">
+            <div class="risk-label">Critical Risk Cases</div>
+            <div class="risk-value" id="stat-critical-risk">--</div>
+        </div>
+    </div>
+</div>
+
+<!-- Performance Metrics -->
+<div class="stats-section">
+    <h3 class="section-title">Performance Metrics</h3>
+    <div class="stats-grid">
+        <div class="stat-item">
+            <div class="stat-label">High Risk Detection Rate</div>
+            <div class="stat-value" id="stat-high-risk-rate">--</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-label">Mothers Assessed This Month</div>
+            <div class="stat-value" id="stat-mothers-assessed">--</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-label">Coverage Rate</div>
+            <div class="stat-value" id="stat-coverage-rate">--</div>
+        </div>
+    </div>
+</div>
+
+<!-- Activity Timeline -->
+<div class="table-card">
+    <h3 class="table-title">Recent Activity</h3>
+    <div id="activity-timeline">
+        <p class="text-center">Loading...</p>
+    </div>
+</div>
+
+<!-- Performance Badge -->
+<div class="info-card" id="performance-badge-card" style="display: none;">
+    <h4>Performance Rating</h4>
+    <div id="performance-badge"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let statsData = {};
+
+// Check if ASHA ID is set
+if (!ASHA_ID || ASHA_ID === '') {
+    showAlert('Please provide ASHA ID in URL: ?asha_id=<your_id>', 'warning');
+}
+
+// Load statistics data
+async function loadStatsData() {
+    if (!ASHA_ID) return;
+    
+    try {
+        const response = await fetch(`/asha/stats?asha_id=${ASHA_ID}`);
+        statsData = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(statsData.error || 'Failed to load statistics');
+        }
+        
+        renderStats();
+        await loadActivityTimeline();
+        updateTimestamp();
+        
+    } catch (error) {
+        console.error('Failed to load statistics:', error);
+        showAlert('Failed to load statistics: ' + error.message, 'error');
+    }
+}
+
+// Render statistics
+function renderStats() {
+    // Get statistics from the nested object
+    const stats = statsData.statistics || {};
+    const riskBreakdown = statsData.risk_breakdown || {};
+    
+    // Summary stats
+    document.getElementById('stat-total-mothers').textContent = stats.total_mothers_assigned || 0;
+    document.getElementById('stat-total-assessments').textContent = stats.total_assessments || 0;
+    document.getElementById('stat-week-assessments').textContent = stats.assessments_this_week || 0;
+    
+    const totalMothers = stats.total_mothers_assigned || 0;
+    const totalAssessments = stats.total_assessments || 0;
+    const avgAssessments = totalMothers > 0 
+        ? (totalAssessments / totalMothers).toFixed(1)
+        : '0.0';
+    document.getElementById('stat-avg-assessments').textContent = avgAssessments;
+    
+    // Risk detection - use risk_breakdown from API
+    document.getElementById('stat-low-risk').textContent = riskBreakdown.LOW || 0;
+    document.getElementById('stat-moderate-risk').textContent = riskBreakdown.MODERATE || 0;
+    document.getElementById('stat-high-risk').textContent = riskBreakdown.HIGH || 0;
+    document.getElementById('stat-critical-risk').textContent = riskBreakdown.CRITICAL || 0;
+    
+    // Performance metrics
+    const highRiskCount = (riskBreakdown.HIGH || 0) + (riskBreakdown.CRITICAL || 0);
+    const highRiskRate = totalAssessments > 0
+        ? ((highRiskCount / totalAssessments) * 100).toFixed(1) + '%'
+        : '0%';
+    document.getElementById('stat-high-risk-rate').textContent = highRiskRate;
+    
+    // Mothers assessed this month (approximate from total mothers)
+    const mothersAssessed = totalMothers;
+    document.getElementById('stat-mothers-assessed').textContent = mothersAssessed;
+    
+    const coverageRate = totalMothers > 0
+        ? ((mothersAssessed / totalMothers) * 100).toFixed(1) + '%'
+        : '0%';
+    document.getElementById('stat-coverage-rate').textContent = coverageRate;
+    
+    // Performance badge
+    showPerformanceBadge(avgAssessments, coverageRate);
+}
+
+// Show performance badge
+function showPerformanceBadge(avgAssessments, coverageRate) {
+    let badge = '';
+    let message = '';
+    
+    const avg = parseFloat(avgAssessments);
+    const coverage = parseFloat(coverageRate);
+    
+    if (avg >= 2 && coverage >= 80) {
+        badge = '<span class="badge badge-success" style="font-size: 1.5rem; padding: 0.5rem 1rem;">Excellent Performance</span>';
+        message = 'You are maintaining excellent assessment coverage and frequency. Keep up the great work!';
+    } else if (avg >= 1 && coverage >= 50) {
+        badge = '<span class="badge badge-warning" style="font-size: 1.5rem; padding: 0.5rem 1rem;">Good Performance</span>';
+        message = 'You are doing well. Try to increase assessment frequency to improve maternal health monitoring.';
+    } else {
+        badge = '<span class="badge badge-danger" style="font-size: 1.5rem; padding: 0.5rem 1rem;">Needs Improvement</span>';
+        message = 'Please focus on conducting more regular assessments for your assigned mothers.';
+    }
+    
+    document.getElementById('performance-badge').innerHTML = `
+        <div style="text-align: center; margin: 1rem 0;">
+            ${badge}
+        </div>
+        <p style="margin: 0;">${message}</p>
+    `;
+    document.getElementById('performance-badge-card').style.display = 'block';
+}
+
+// Load activity timeline
+async function loadActivityTimeline() {
+    // Use recent_activity from statsData which is already loaded
+    const recentActivity = statsData.recent_activity || [];
+    
+    const timeline = document.getElementById('activity-timeline');
+    
+    if (recentActivity.length === 0) {
+        timeline.innerHTML = '<p class="text-center">No activity yet</p>';
+        return;
+    }
+    
+    timeline.innerHTML = recentActivity.map(activity => {
+        const date = new Date(activity.timestamp);
+        const dateStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        const riskLevel = activity.risk?.risk_category || 'N/A';
+        const riskClass = getRiskClass(riskLevel);
+        const riskBadge = `<span class="badge badge-${riskClass}">${riskLevel}</span>`;
+        
+        return `
+            <div style="border-left: 3px solid var(--primary-color); padding-left: 1rem; margin-bottom: 1rem;">
+                <div style="font-weight: 600;">${activity.mother_name}</div>
+                <div style="color: var(--text-secondary); font-size: 0.875rem;">${dateStr}</div>
+                <div style="margin-top: 0.25rem;">Risk: ${riskBadge}</div>
+                <div style="font-size: 0.875rem; color: var(--text-secondary);">Symptoms: ${activity.symptoms_count || 0}</div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Get risk CSS class
+function getRiskClass(risk) {
+    const classes = {
+        'LOW': 'success',
+        'MODERATE': 'warning',
+        'HIGH': 'danger',
+        'CRITICAL': 'critical',
+        'N/A': 'secondary'
+    };
+    return classes[risk] || 'secondary';
+}
+
+// Load data on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadStatsData();
+});
+</script>
+{% endblock %}

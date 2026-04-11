@@ -1,0 +1,511 @@
+{% extends "asha/base.html" %}
+
+{% block page_title %}Notifications & Messages{% endblock %}
+
+{% block content %}
+<div class="page-actions">
+    <button class="btn btn-sakura" onclick="loadNotifications()"><i class="fa-solid fa-rotate"></i> Refresh</button>
+    <button class="btn btn-secondary" onclick="markAllRead()"><i class="fa-solid fa-check-double"></i> Mark All as Read</button>
+</div>
+
+<!-- Filter Tabs -->
+<div class="filter-tabs">
+    <button class="tab-btn active" onclick="filterNotifications('all')">All Notifications</button>
+    <button class="tab-btn" onclick="filterNotifications('doctor')"><i class="fa-solid fa-user-doctor"></i> From Doctors</button>
+    <button class="tab-btn" onclick="filterNotifications('system')"><i class="fa-solid fa-circle-exclamation"></i> System Alerts</button>
+    <button class="tab-btn" onclick="filterNotifications('unread')"><i class="fa-solid fa-envelope"></i> Unread Only</button>
+</div>
+
+<!-- Notifications Container -->
+<div class="notifications-container" id="notificationsContainer">
+    <div class="loading">Loading notifications...</div>
+</div>
+
+<!-- Message Detail Modal -->
+<div id="messageModal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 700px;">
+        <span class="close" onclick="closeMessageModal()">&times;</span>
+        <div id="messageDetails"></div>
+    </div>
+</div>
+
+<style>
+.filter-tabs {
+    display: flex;
+    gap: 10px;
+    margin: 20px 0;
+    border-bottom: 2px solid #e0e0e0;
+    padding-bottom: 10px;
+}
+
+.tab-btn {
+    padding: 10px 20px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    color: #666;
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s;
+}
+
+.tab-btn:hover {
+    color: var(--sakura-pink);
+}
+
+.tab-btn.active {
+    color: var(--sakura-pink);
+    border-bottom-color: var(--sakura-pink);
+}
+
+.notifications-container {
+    margin: 20px 0;
+}
+
+.notification-card {
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 15px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    border-left: 4px solid var(--fuji-500);
+    position: relative;
+}
+
+.notification-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.notification-card.unread {
+    background: var(--sakura-50);
+    border-left-color: var(--sakura-pink);
+}
+
+.notification-card.doctor-review {
+    border-left-color: #4CAF50;
+}
+
+.notification-card.system-alert {
+    border-left-color: #f44336;
+}
+
+.unread-badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: var(--sakura-pink);
+    color: white;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+.notification-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+}
+
+.notification-type {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: bold;
+    background: var(--fuji-50);
+    color: var(--fuji-700);
+}
+
+.notification-type.doctor {
+    background: #e8f5e9;
+    color: #2e7d32;
+}
+
+.notification-type.system {
+    background: #ffebee;
+    color: #c62828;
+}
+.notification-preview {
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.5;
+    margin: 10px 0;
+    white-space: pre-wrap;
+}
+
+.notification-meta {
+    display: flex;
+    gap: 15px;
+    font-size: 12px;
+    color: #999;
+    margin-top: 10px;
+}
+
+.loading {
+    text-align: center;
+    padding: 40px;
+    color: #666;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #999;
+}
+
+.empty-state-icon {
+    font-size: 64px;
+    margin-bottom: 20px;
+}
+
+.modal {
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-content {
+    background-color: white;
+    padding: 30px;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    position: relative;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.close {
+    position: absolute;
+    right: 20px;
+    top: 20px;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+    color: #666;
+}
+
+.close:hover {
+    color: #000;
+}
+
+.message-header {
+    border-bottom: 2px solid #e0e0e0;
+    padding-bottom: 15px;
+    margin-bottom: 20px;
+}
+
+.message-body {
+    background: #f5f5f5;
+    padding: 20px;
+    border-radius: 8px;
+    margin: 20px 0;
+    line-height: 1.6;
+    white-space: pre-wrap;
+}
+
+.document-link {
+    display: inline-block;
+    margin: 15px 0;
+    padding: 10px 20px;
+    background: var(--fuji-500);
+    color: white;
+    text-decoration: none;
+    border-radius: 4px;
+    transition: background 0.2s;
+}
+
+.document-link:hover {
+    background: #1976D2;
+}
+
+.btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: background 0.2s;
+}
+
+.btn-primary {
+    background: var(--fuji-500);
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #1976D2;
+}
+
+.btn-secondary {
+    background: #757575;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background: #616161;
+}
+
+.btn-success {
+    background: #4CAF50;
+    color: white;
+}
+
+.btn-success:hover {
+    background: #45a049;
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let allNotifications = [];
+let currentFilter = 'all';
+
+async function loadNotifications() {
+    const container = document.getElementById('notificationsContainer');
+    container.innerHTML = '<div class="loading">Loading notifications...</div>';
+    
+    try {
+        console.log('[NOTIFICATIONS] Loading for ASHA:', ASHA_ID);
+        
+        // Fetch all messages and notifications for this ASHA worker
+        const response = await fetch(`/asha/notifications/${ASHA_ID}`);
+        
+        if (!response.ok) {
+            throw new Error(`Server error ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('[NOTIFICATIONS] Loaded:', data);
+        
+        allNotifications = data.notifications || [];
+        
+        renderNotifications();
+        
+    } catch (error) {
+        console.error('[NOTIFICATIONS] Error:', error);
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                <h3>Failed to load notifications</h3>
+                <p>${error.message}</p>
+            </div>
+        `;
+    }
+}
+
+function filterNotifications(filter) {
+    currentFilter = filter;
+    
+    // Update active tab
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    event.target.classList.add('active');
+    
+    renderNotifications();
+}
+
+function renderNotifications() {
+    const container = document.getElementById('notificationsContainer');
+    
+    // Apply filter
+    let filtered = allNotifications;
+    
+    if (currentFilter === 'doctor') {
+        filtered = allNotifications.filter(n => n.type === 'doctor_review');
+    } else if (currentFilter === 'system') {
+        filtered = allNotifications.filter(n => n.type === 'system');
+    } else if (currentFilter === 'unread') {
+        filtered = allNotifications.filter(n => !n.read);
+    }
+    
+    if (filtered.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon"><i class="fa-solid fa-inbox"></i></div>
+                <h3>No notifications</h3>
+                <p>${currentFilter === 'unread' ? 'All caught up! No unread notifications.' : 'No notifications to display.'}</p>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = filtered.map(notification => {
+        const isUnread = !notification.read;
+        const cardClass = `notification-card ${isUnread ? 'unread' : ''} ${notification.type === 'doctor_review' ? 'doctor-review' : ''}`;
+        
+        const typeLabel = notification.type === 'doctor_review' 
+            ? '<i class="fa-solid fa-user-doctor"></i> Doctor Review' 
+            : '<i class="fa-solid fa-circle-exclamation"></i> System Alert';
+        const typeClass = notification.type === 'doctor_review' ? 'doctor' : 'system';
+        
+        const timeAgo = getTimeAgo(notification.timestamp);
+        
+        return `
+            <div class="${cardClass}" onclick="viewNotification('${notification._id}')">
+                ${isUnread ? '<span class="unread-badge">NEW</span>' : ''}
+                
+                <div class="notification-header">
+                    <span class="notification-type ${typeClass}">${typeLabel}</span>
+                    <span class="notification-time">${timeAgo}</span>
+                </div>
+                
+                <div class="notification-title">${notification.title}</div>
+                <div class="notification-preview">${notification.preview}</div>
+                
+                <div class="notification-meta">
+                    <span><i class="fa-solid fa-user"></i> ${notification.mother_name}</span>
+                    ${notification.doctor_name ? `<span><i class="fa-solid fa-user-doctor"></i> Dr. ${notification.doctor_name}</span>` : ''}
+                    ${notification.document_type ? `<span><i class="fa-solid fa-file-medical"></i> ${notification.document_type}</span>` : ''}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function viewNotification(notificationId) {
+    const notification = allNotifications.find(n => n._id === notificationId);
+    if (!notification) return;
+    
+    console.log('[NOTIFICATIONS] Viewing:', notificationId);
+    
+    // Mark as read
+    if (!notification.read) {
+        try {
+            await fetch(`/asha/notifications/${notificationId}/read`, { method: 'POST' });
+            notification.read = true;
+            renderNotifications();
+        } catch (error) {
+            console.error('[NOTIFICATIONS] Failed to mark as read:', error);
+        }
+    }
+    
+    // Build modal content
+    let detailsHTML = `
+        <div class="message-header">
+            <h3>${notification.title}</h3>
+            <p style="color: var(--text-muted); margin: 5px 0;">
+                <strong>${notification.mother_name}</strong> • ${new Date(notification.timestamp).toLocaleString()}
+            </p>
+            ${notification.doctor_name ? `<p style="color: var(--sakura-deep);"><strong>From:</strong> Dr. ${notification.doctor_name}</p>` : ''}
+        </div>
+        
+        <div class="message-body">${notification.message}</div>
+    `;
+    
+    // Add document link if available
+    if (notification.document_id) {
+        detailsHTML += `
+            <a href="/asha/dashboard/documents?mother_id=${notification.mother_id}&asha_id=${ASHA_ID}" 
+               class="document-link" target="_blank">
+                <i class="fa-solid fa-file-waveform"></i> View Document & AI Analysis
+            </a>
+        `;
+    }
+    
+    // Add action buttons
+    detailsHTML += `
+        <div style="margin-top: 30px; display: flex; gap: 10px;">
+            <button class="btn btn-sakura" onclick="replyToDoctor('${notification._id}')">
+                <i class="fa-solid fa-reply"></i> Reply to Doctor
+            </button>
+            <button class="btn btn-secondary" onclick="closeMessageModal()">
+                Close
+            </button>
+        </div>
+    `;
+    
+    document.getElementById('messageDetails').innerHTML = detailsHTML;
+    document.getElementById('messageModal').style.display = 'flex';
+}
+
+function replyToDoctor(notificationId) {
+    const notification = allNotifications.find(n => n._id === notificationId);
+    if (!notification) return;
+    
+    const replyMessage = prompt(`Reply to Dr. ${notification.doctor_name}:\n\n(Your message will be sent as a note in the system)`);
+    
+    if (replyMessage && replyMessage.trim()) {
+        // You can implement this to create a message back to doctor
+        alert('Reply functionality coming soon! For now, please contact the doctor directly.');
+    }
+}
+
+async function markAllRead() {
+    if (allNotifications.filter(n => !n.read).length === 0) {
+        alert('All notifications are already read');
+        return;
+    }
+    
+    if (!confirm('Mark all notifications as read?')) {
+        return;
+    }
+    
+    try {
+        await fetch(`/asha/notifications/mark-all-read`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ asha_id: ASHA_ID })
+        });
+        
+        allNotifications.forEach(n => n.read = true);
+        renderNotifications();
+        
+    } catch (error) {
+        console.error('[NOTIFICATIONS] Failed to mark all as read:', error);
+        alert('Failed to mark notifications as read');
+    }
+}
+
+function closeMessageModal() {
+    document.getElementById('messageModal').style.display = 'none';
+}
+
+function getTimeAgo(timestamp) {
+    const now = new Date();
+    const time = new Date(timestamp);
+    const diffMs = now - time;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins} min ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+    
+    return time.toLocaleDateString();
+}
+
+// Close modal on outside click
+window.onclick = function(event) {
+    const modal = document.getElementById('messageModal');
+    if (event.target == modal) {
+        closeMessageModal();
+    }
+}
+
+// Load on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadNotifications();
+    
+    // Auto-refresh every 30 seconds
+    setInterval(loadNotifications, 30000);
+});
+</script>
+{% endblock %}

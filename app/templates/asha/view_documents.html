@@ -1,0 +1,446 @@
+{% extends "asha/base.html" %}
+
+{% block page_title %}Medical Documents{% endblock %}
+
+{% block content %}
+<div class="page-actions">
+    <button class="btn btn-secondary" onclick="window.history.back()"><i class="fa-solid fa-arrow-left"></i> Back to Mothers</button>
+    <button class="btn btn-primary" onclick="loadDocuments()"><i class="fa-solid fa-rotate"></i> Refresh</button>
+</div>
+
+<!-- Mother Info Card -->
+<div class="info-card" id="motherInfo" style="display: none;">
+    <h3 id="motherName"></h3>
+    <p id="documentCount"></p>
+</div>
+
+<!-- Documents Grid -->
+<div class="documents-grid" id="documentsGrid">
+    <div class="loading">Loading documents...</div>
+</div>
+
+<!-- Document Detail Modal -->
+<div id="detailModal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 1100px; width: 95%;">
+        <span class="close" onclick="closeDetailModal()">&times;</span>
+        <div id="documentDetails"></div>
+    </div>
+</div>
+
+<style>
+.documents-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+    margin: 20px 0;
+}
+
+.document-card {
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.document-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.doc-type-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+
+.doc-type-lab_report { background: #e3f2fd; color: #1976d2; }
+.doc-type-ultrasound { background: #f3e5f5; color: #7b1fa2; }
+.doc-type-prescription { background: #e8f5e9; color: #388e3c; }
+.doc-type-xray { background: #fff3e0; color: #f57c00; }
+.doc-type-other { background: #f5f5f5; color: #616161; }
+
+.abnormal-badge {
+    background: #ffebee;
+    color: #c62828;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.ai-summary {
+    background: #f5f5f5;
+    padding: 12px;
+    border-radius: 4px;
+    margin: 10px 0;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.findings-list {
+    list-style: none;
+    padding: 0;
+    margin: 10px 0;
+}
+
+.findings-list li {
+    padding: 8px;
+    background: #fafafa;
+    margin: 4px 0;
+    border-radius: 4px;
+    border-left: 3px solid #4CAF50;
+}
+
+.findings-list li.abnormal {
+    border-left-color: #f44336;
+    background: #ffebee;
+}
+
+.loading {
+    text-align: center;
+    padding: 40px;
+    color: #666;
+}
+
+/* Two-column Document Detail Layout */
+.document-details-layout {
+    display: flex;
+    flex-direction: row;
+    gap: 25px;
+    align-items: flex-start;
+}
+
+.document-visual {
+    flex: 1;
+    min-width: 45%;
+    max-width: 50%;
+    min-height: 400px;
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    padding: 10px;
+}
+
+.document-info {
+    flex: 1;
+    max-width: 55%;
+    overflow-y: auto;
+    max-height: 75vh;
+    padding-right: 15px;
+}
+
+/* Custom scrollbar for info panel */
+.document-info::-webkit-scrollbar {
+    width: 6px;
+}
+.document-info::-webkit-scrollbar-thumb {
+    background-color: #ccc;
+    border-radius: 10px;
+}
+
+@media (max-width: 900px) {
+    .document-details-layout {
+        flex-direction: column;
+    }
+    .document-visual, .document-info {
+        max-width: 100%;
+        min-width: 100%;
+    }
+    .document-visual {
+        min-height: 300px;
+    }
+    .document-info {
+        max-height: none;
+        overflow-y: visible;
+        padding-right: 0;
+    }
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Alert function
+function showAlert(message, type) {
+    alert(message);
+    console.log(`[ALERT ${type}]:`, message);
+}
+
+// Get mother_id from URL (ASHA_ID is already defined in base template)
+const urlParams = new URLSearchParams(window.location.search);
+const MOTHER_ID = urlParams.get('mother_id');
+
+console.log('[DOCS INIT] Mother ID:', MOTHER_ID);
+console.log('[DOCS INIT] ASHA ID:', ASHA_ID);
+
+let documentsData = [];
+
+async function loadDocuments() {
+    const grid = document.getElementById('documentsGrid');
+    
+    if (!MOTHER_ID) {
+        grid.innerHTML = '<div class="loading" style="color: red;">Error: Mother ID not specified in URL</div>';
+        console.error('[DOCS] No mother_id in URL');
+        return;
+    }
+    
+    console.log('[DOCS] Loading documents for mother:', MOTHER_ID);
+    grid.innerHTML = '<div class="loading">Fetching documents from server...</div>';
+    
+    try {
+        const url = `/asha/documents/${MOTHER_ID}`;
+        console.log('[DOCS] Fetching from URL:', url);
+        
+        const response = await fetch(url);
+        console.log('[DOCS] Response status:', response.status);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Server error ${response.status}: ${errorText}`);
+        }
+        
+        const data = await response.json();
+        console.log('[DOCS] Response data:', data);
+        
+        documentsData = data.documents || [];
+        console.log('[DOCS] Loaded', documentsData.length, 'documents');
+        
+        // Update mother info
+        document.getElementById('motherName').textContent = data.mother_name || 'Unknown';
+        document.getElementById('documentCount').textContent = 
+            `Total Documents: ${data.total_documents || 0}`;
+        document.getElementById('motherInfo').style.display = 'block';
+        
+        renderDocuments();
+        
+    } catch (error) {
+        console.error('[DOCS] Failed to load documents:', error);
+        document.getElementById('documentsGrid').innerHTML = 
+            `<div class="loading" style="color: red; background: #ffe0e0; padding: 20px; border-radius: 8px;">
+                <strong>Error loading documents:</strong><br>
+                ${error.message}<br><br>
+                <small>Mother ID: ${MOTHER_ID}</small><br>
+                <small>Check browser console (F12) for details</small>
+            </div>`;
+    }
+}
+
+function renderDocuments() {
+    const grid = document.getElementById('documentsGrid');
+    
+    console.log('[DOCS] Rendering', documentsData.length, 'documents');
+    
+    if (!documentsData || documentsData.length === 0) {
+        grid.innerHTML = `<div class="loading" style="background: #e8f5e9; color: #2e7d32; padding: 20px; border-radius: 8px;">
+            <strong>No documents uploaded yet</strong><br>
+            <small>Upload documents from the mothers list page</small>
+        </div>`;
+        return;
+    }
+    
+    grid.innerHTML = documentsData.map(doc => {
+        const typeClass = `doc-type-${doc.document_type}`;
+        const typeName = doc.document_type.replace('_', ' ').toUpperCase();
+        const uploadDate = new Date(doc.uploaded_at).toLocaleDateString();
+        
+        const abnormalBadge = doc.abnormal_count > 0 
+            ? `<span class="abnormal-badge"><i class="fa-solid fa-triangle-exclamation"></i> ${doc.abnormal_count} Abnormal</span>`
+            : '';
+        
+        // Show AI summary or status message
+        let aiSummaryHtml = '';
+        if (doc.ai_summary && doc.ai_summary !== 'Analysis completed') {
+            aiSummaryHtml = `
+                <div class="ai-summary">
+                    <strong><i class="fa-solid fa-robot"></i> AI Summary:</strong><br>
+                    ${doc.ai_summary}
+                </div>
+            `;
+        } else if (doc.has_ai_analysis) {
+            aiSummaryHtml = `
+                <div class="ai-summary" style="background: #e3f2fd; color: #1976d2;">
+                    <strong><i class="fa-solid fa-magnifying-glass-chart"></i> AI Analysis:</strong> Click to view details
+                </div>
+            `;
+        } else {
+            aiSummaryHtml = `
+                <div class="ai-summary" style="background: #fff3e0; color: #f57c00;">
+                    <strong><i class="fa-solid fa-circle-exclamation"></i></strong> No AI analysis available
+                </div>
+            `;
+        }
+        
+        return `
+            <div class="document-card" onclick="viewDocumentDetail('${doc.document_id}')">
+                <span class="doc-type-badge ${typeClass}">${typeName}</span>
+                ${abnormalBadge}
+                
+                <h4>${doc.file_info.filename}</h4>
+                <p><strong>Description:</strong> ${doc.description || 'No description'}</p>
+                
+                ${aiSummaryHtml}
+                
+                <p style="font-size: 12px; color: #666; margin-top: 10px;">
+                    <i class="fa-solid fa-calendar"></i> ${uploadDate} • <i class="fa-solid fa-hard-drive"></i> ${doc.file_info.size_kb} KB
+                </p>
+            </div>
+        `;
+    }).join('');
+}
+
+async function viewDocumentDetail(documentId) {
+    const doc = documentsData.find(d => d.document_id === documentId);
+    if (!doc) return;
+    
+    console.log('[DOCS] Viewing document:', documentId);
+    
+    // Fetch full details including AI analysis
+    try {
+        const response = await fetch(`/api/documents/${documentId}`);
+        const fullDoc = await response.json();
+        
+        console.log('[DOCS] Full document data:', fullDoc);
+        
+        const aiAnalysis = fullDoc.ai_analysis || {};
+        const fileMeta = fullDoc.file_metadata || {};
+        const fileExt = fileMeta.file_type ? fileMeta.file_type.toLowerCase() : '';
+        const storedFilename = fileMeta.stored_filename || '';
+        const fileUrl = storedFilename ? '/api/documents/file/' + storedFilename : '';
+        
+        // Build document visual element
+        let visualHTML = '';
+        if (!fileUrl) {
+            visualHTML = `<div style="text-align:center; padding: 40px; color: #888;"><i class="fa-solid fa-file-image fa-3x"></i><br>File not found</div>`;
+        } else if (['.jpg', '.jpeg', '.png', '.gif'].includes(fileExt)) {
+            visualHTML = `<a href="${fileUrl}" target="_blank"><img src="${fileUrl}" alt="Medical Document" style="max-width:100%; max-height:100%; object-fit:contain; border-radius: 8px;"></a>`;
+        } else if (fileExt === '.pdf') {
+            visualHTML = `<embed src="${fileUrl}" type="application/pdf" style="width:100%; height:600px; border:none; border-radius: 8px;"></embed>`;
+        } else {
+            visualHTML = `<div style="text-align:center; padding: 40px;"><i class="fa-solid fa-file fa-3x"></i><br><a href="${fileUrl}" class="btn btn-primary mt-3" target="_blank">Download File</a></div>`;
+        }
+
+        let infoHTML = `
+            <div style="border-bottom: 1px solid #eee; padding-bottom: 15px; margin-bottom: 15px;">
+                <h3 style="margin-top:0;"><i class="fa-solid fa-file-medical"></i> ${doc.file_info.filename}</h3>
+                <p style="margin: 5px 0;"><strong>Type:</strong> ${doc.document_type.replace('_', ' ')}</p>
+                <p style="margin: 5px 0;"><strong>Description:</strong> ${doc.description || 'No description'}</p>
+                <p style="margin: 5px 0; font-size: 0.9em; color: #666;"><i class="fa-solid fa-calendar"></i> ${new Date(doc.uploaded_at).toLocaleString()} • <a href="${fileUrl}" target="_blank"><i class="fa-solid fa-download"></i> Download</a></p>
+            </div>
+        `;
+        
+        // Show doctor review if available
+        if (doc.doctor_review && doc.doctor_review.reviewed) {
+            const reviewDate = new Date(doc.doctor_review.reviewed_at).toLocaleString();
+            infoHTML += `
+                <div class="doctor-note" style="background: #e8f5e9; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 3px solid #4caf50;">
+                    <h4 style="margin-top: 0; color: #2e7d32;"><i class="fa-solid fa-user-doctor"></i> Doctor's Review</h4>
+                    <p><strong>Reviewed by:</strong> ${doc.doctor_review.doctor_name}</p>
+                    <p><strong>Date:</strong> ${reviewDate}</p>
+                    ${doc.doctor_review.ai_overridden ? '<p style="color: #ff9800; font-weight: bold;"><i class="fa-solid fa-triangle-exclamation"></i> AI Analysis was overridden by doctor</p>' : ''}
+                    <p><strong>Doctor's Notes:</strong></p>
+                    <p style="white-space: pre-wrap; margin-bottom: 0;">${doc.doctor_review.notes}</p>
+                </div>
+            `;
+        }
+        
+        // Check if AI analysis exists and has content
+        if (aiAnalysis.key_findings && aiAnalysis.key_findings.length > 0) {
+            infoHTML += `
+                <h4 style="margin-top: 20px;"><i class="fa-solid fa-magnifying-glass" style="color: #1976d2;"></i> Key Findings:</h4>
+                <ul class="findings-list">
+                    ${aiAnalysis.key_findings.map(f => `<li>${f}</li>`).join('')}
+                </ul>
+            `;
+        }
+        
+        if (aiAnalysis.abnormal_values && aiAnalysis.abnormal_values.length > 0) {
+            infoHTML += `
+                <h4 style="margin-top: 20px;"><i class="fa-solid fa-triangle-exclamation" style="color: #d32f2f;"></i> Abnormal Values:</h4>
+                <ul class="findings-list">
+                    ${aiAnalysis.abnormal_values.map(a => `<li class="abnormal">${a}</li>`).join('')}
+                </ul>
+            `;
+        }
+        
+        if (aiAnalysis.clinical_summary) {
+            infoHTML += `
+                <h4 style="margin-top: 20px;"><i class="fa-solid fa-stethoscope" style="color: #388e3c;"></i> Clinical Summary:</h4>
+                <div class="ai-summary">${aiAnalysis.clinical_summary}</div>
+            `;
+        }
+        
+        if (aiAnalysis.recommendations && aiAnalysis.recommendations.length > 0) {
+            infoHTML += `
+                <h4 style="margin-top: 20px;"><i class="fa-solid fa-lightbulb" style="color: #f57c00;"></i> Recommendations:</h4>
+                <ul class="findings-list">
+                    ${aiAnalysis.recommendations.map(r => `<li>${r}</li>`).join('')}
+                </ul>
+            `;
+        }
+        
+        // If AI analysis failed or has error
+        if (aiAnalysis.error) {
+            infoHTML += `
+                <div class="ai-summary" style="background: #ffebee; color: #c62828; margin-top: 20px;">
+                    <strong><i class="fa-solid fa-circle-exclamation"></i> AI Analysis Error:</strong><br>
+                    ${aiAnalysis.error}<br><br>
+                    <em>Manual review required. The document has been saved and can be reviewed by healthcare providers.</em>
+                </div>
+            `;
+        } else if (!aiAnalysis.key_findings && !aiAnalysis.clinical_summary) {
+            infoHTML += `
+                <div class="ai-summary" style="background: #fff3e0; color: #f57c00; margin-top: 20px;">
+                    <strong><i class="fa-solid fa-circle-info"></i> No AI Analysis Available</strong><br>
+                    This document was uploaded but AI analysis is not available. Healthcare providers can manually review the document.
+                </div>
+            `;
+        }
+
+        // Construct final 2-column layout
+        let detailsHTML = `
+            <div class="document-details-layout">
+                <div class="document-visual">
+                    ${visualHTML}
+                </div>
+                <div class="document-info">
+                    ${infoHTML}
+                </div>
+            </div>
+        `;
+        
+        document.getElementById('documentDetails').innerHTML = detailsHTML;
+        document.getElementById('detailModal').style.display = 'block';
+        
+    } catch (error) {
+        console.error('[DOCS] Failed to load document details:', error);
+        showAlert('Failed to load document details', 'error');
+    }
+}
+
+function closeDetailModal() {
+    document.getElementById('detailModal').style.display = 'none';
+}
+
+// Close modal on outside click
+window.onclick = function(event) {
+    const modal = document.getElementById('detailModal');
+    if (event.target == modal) {
+        closeDetailModal();
+    }
+}
+
+// Load on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadDocuments();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ArogyaMaa ASHA{% endblock %}</title>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    
+    <!-- Reuse Theme CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+</head>
+<body>
+    <div class="admin-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>🌸 ArogyaMaa</h2>
+                <p class="subtitle">ASHA Portal</p>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <a href="{{ url_for('asha_dashboard.dashboard', asha_id=asha_id) }}" class="nav-item {% if request.endpoint == 'asha_dashboard.dashboard' %}active{% endif %}">
+                    <span class="nav-icon"><i class="fa-solid fa-chart-line"></i></span>
+                    <span class="nav-text">Dashboard</span>
+                </a>
+                <a href="{{ url_for('asha_dashboard.mothers', asha_id=asha_id) }}" class="nav-item {% if request.endpoint == 'asha_dashboard.mothers' %}active{% endif %}">
+                    <span class="nav-icon"><i class="fa-solid fa-person-breastfeeding"></i></span>
+                    <span class="nav-text">My Mothers</span>
+                </a>
+                <a href="{{ url_for('asha_dashboard.new_assessment', asha_id=asha_id) }}" class="nav-item {% if request.endpoint == 'asha_dashboard.new_assessment' %}active{% endif %}">
+                    <span class="nav-icon"><i class="fa-solid fa-clipboard-check"></i></span>
+                    <span class="nav-text">New Assessment</span>
+                </a>
+                <a href="{{ url_for('asha_dashboard.rag_chatbot', asha_id=asha_id) }}" class="nav-item {% if request.endpoint == 'asha_dashboard.rag_chatbot' %}active{% endif %}">
+                    <span class="nav-icon"><i class="fa-solid fa-robot"></i></span>
+                    <span class="nav-text">AI Assistant</span>
+                </a>
+                <a href="{{ url_for('asha_dashboard.notifications', asha_id=asha_id) }}" class="nav-item {% if request.endpoint == 'asha_dashboard.notifications' %}active{% endif %}">
+                    <span class="nav-icon"><i class="fa-solid fa-bell"></i></span>
+                    <span class="nav-text">Notifications</span>
+                    <span id="unreadBadge" class="notification-badge" style="display: none;"></span>
+                </a>
+                <a href="{{ url_for('asha_dashboard.stats', asha_id=asha_id) }}" class="nav-item {% if request.endpoint == 'asha_dashboard.stats' %}active{% endif %}">
+                    <span class="nav-icon"><i class="fa-solid fa-chart-simple"></i></span>
+                    <span class="nav-text">My Statistics</span>
+                </a>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <div class="system-status">
+                    <h4>ASHA Worker</h4>
+                    <div class="status-item">
+                        <span class="status-label">Name:</span>
+                        <span class="status-value">{{ asha_name or 'ASHA' }}</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">ID:</span>
+                        <span class="status-value" id="asha-id-display">{{ asha_id[:8] if asha_id else 'Not set' }}...</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">AI Support:</span>
+                        <span class="status-value status-active">Active</span>
+                    </div>
+                </div>
+                <a href="{{ url_for('auth.logout') }}" class="sidebar-logout"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
+            </div>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="page-header">
+                <h1>{% block page_title %}ASHA Dashboard{% endblock %}</h1>
+                <div class="header-actions">
+                    <span class="timestamp">Last updated: <span id="last-update">--</span></span>
+                </div>
+            </header>
+            
+            <!-- Alert Container -->
+            <div id="alert-container"></div>
+            
+            <!-- Page Content -->
+            <div class="content-wrapper">
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+    
+    <!-- Store ASHA ID globally -->
+    <script>
+        const ASHA_ID = "{{ asha_id }}";
+        
+        // Check for unread notifications
+        async function updateNotificationBadge() {
+            if (!ASHA_ID) return;
+            
+            try {
+                const response = await fetch(`/asha/notifications/${ASHA_ID}`);
+                const data = await response.json();
+                
+                const unreadCount = data.unread_count || 0;
+                const badge = document.getElementById('unreadBadge');
+                
+                if (badge && unreadCount > 0) {
+                    badge.textContent = unreadCount > 9 ? '9+' : unreadCount;
+                    badge.style.display = 'inline-block';
+                } else if (badge) {
+                    badge.style.display = 'none';
+                }
+            } catch (error) {
+                console.error('[ASHA] Failed to fetch notifications:', error);
+            }
+        }
+        
+        // Update badge on page load and every minute
+        document.addEventListener('DOMContentLoaded', () => {
+            updateNotificationBadge();
+            setInterval(updateNotificationBadge, 60000);
+        });
+    </script>
+    
+    <!-- Custom JS -->
+    <script src="{{ url_for('static', filename='js/admin_dashboard.js') }}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
