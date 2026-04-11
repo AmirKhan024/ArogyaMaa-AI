@@ -1,0 +1,41 @@
+# Environment
+.env
+env/
+venv/
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Logs
+*.log
+flask_output.log
+telegram_output.log
+
+# RAG Vector DB (binary — regenerate with knowledge_ingestion.py)
+app/rag/vector_db/
+
+# Generated/runtime output
+appointment/excel/
+excel/
+tmp/
+temp_audio/
+outputs/
+
+# Uploads (patient data — not tracked)
+uploads/documents/
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

@@ -1,0 +1,45 @@
+# Flask Backend
+Flask
+python-dotenv
+
+# MongoDB
+pymongo
+
+# Telegram Bot API
+python-telegram-bot
+httpx
+
+# AI & LLM (Groq + LangChain)
+langchain
+langchain-core
+langchain-community
+langchain-classic
+langchain-text-splitters
+langchain-groq
+langgraph
+langsmith
+groq
+httpx-sse
+pydantic-settings
+
+# RAG & Vector Database
+chromadb
+sentence-transformers
+
+# PDF Processing
+pypdf
+pdfplumber
+
+# Voice Processing (TTS + Audio Conversion)
+edge-tts>=6.1.10
+pydub>=0.25.1
+
+# Utilities
+requests
+tiktoken
+
+# Appointment Module (voice booking)
+openai
+openpyxl
+huggingface_hub
+dateparser
