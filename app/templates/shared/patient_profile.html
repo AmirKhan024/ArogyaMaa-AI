@@ -1,0 +1,261 @@
+{% extends base_template %}
+{% block title %}Clinical Portfolio | ArogyaMaa{% endblock %}
+{% block role %}{{ role_name }}{% endblock %}
+
+{% block sidebar %}
+    {% if role_name == 'ASHA Worker' %}
+        <li><a href="{{ url_for('asha_dashboard.dashboard') }}" class="nav-link"><i class="fa-solid fa-house-medical"></i> My Area</a></li>
+        <li><a href="{{ url_for('asha_dashboard.mothers') }}" class="nav-link"><i class="fa-solid fa-users"></i> My Mothers</a></li>
+        <li><a href="{{ url_for('asha_dashboard.new_assessment') }}" class="nav-link"><i class="fa-solid fa-clipboard-list"></i> New Assessment</a></li>
+    {% else %}
+        <li><a href="{{ url_for('doctor_dashboard.dashboard') }}" class="nav-link"><i class="fa-solid fa-house-medical"></i> Overview</a></li>
+        <li><a href="{{ url_for('doctor_dashboard.mothers') }}" class="nav-link active"><i class="fa-solid fa-hospital-user"></i> My Patents</a></li>
+        <li><a href="{{ url_for('doctor_dashboard.message') }}" class="nav-link"><i class="fa-solid fa-paper-plane"></i> Tele-Consult</a></li>
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem; display:flex; align-items:center; justify-content:space-between;">
+    <div style="display:flex; align-items:center; gap:1rem;">
+        <a href="javascript:history.back()" style="text-decoration:none; color:var(--text-muted); font-size:1.2rem;"><i class="fa-solid fa-circle-arrow-left"></i> Back</a>
+        <h1 style="margin:0; font-size:2.2rem; font-weight:800; background:linear-gradient(135deg, var(--fuji-dark), var(--sakura-deep)); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Clinical Portfolio</h1>
+    </div>
+    <div style="display:flex; gap:1rem;">
+        <a href="{{ url_for('shared_dashboard.export_profile', mother_id=patient.id) }}" class="btn-primary" style="background:rgba(59, 130, 246, 0.1); border:1px solid var(--fuji-blue); color:var(--fuji-blue); text-decoration:none; display:flex; align-items:center; gap:0.5rem; padding: 0.8rem 1.5rem; border-radius:12px; font-weight:600;">
+            <i class="fa-solid fa-file-pdf"></i> Export Medical Report
+        </a>
+    </div>
+</div>
+
+<!-- TOP HEADER: Quick ID & Progress -->
+<div style="display:grid; grid-template-columns: 2fr 1.2fr; gap:1.5rem; margin-bottom:1.5rem;">
+    <!-- Profile Header -->
+    <div class="glass-card" style="display:flex; gap:2.5rem; align-items:center; padding: 2.5rem;">
+        <div style="width:130px; height:130px; background:linear-gradient(135deg, var(--sakura-pink), var(--sakura-deep)); border-radius:35px; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:3.5rem; color:white; box-shadow: 0 15px 30px rgba(244, 114, 182, 0.3);">
+            {{ patient.full_name[0] if patient.full_name else 'M' }}
+        </div>
+        <div style="flex:1;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                <div>
+                    <h2 style="margin:0; font-size:2.4rem; font-weight:800; color:var(--fuji-dark);">{{ patient.full_name }}</h2>
+                    <p style="margin:0.5rem 0 0 0; color:var(--text-muted); font-size:1.1rem;">
+                        <i class="fa-solid fa-phone"></i> {{ patient.phone_number }} | 
+                        <i class="fa-solid fa-location-dot"></i> {{ patient.location }} |
+                        <i class="fa-solid fa-cake-candles"></i> {{ patient.age }} Years
+                    </p>
+                </div>
+                <div style="text-align:right;">
+                    <span class="badge" style="
+                        font-size:1rem; 
+                        padding:0.6rem 1.5rem; 
+                        border-radius:12px;
+                        background: {% if risk_status == 'LOW' %}rgba(16, 185, 129, 0.15){% elif risk_status == 'MODERATE' %}rgba(245, 158, 11, 0.15){% else %}rgba(239, 68, 68, 0.15){% endif %};
+                        color: {% if risk_status == 'LOW' %}#059669{% elif risk_status == 'MODERATE' %}#d97706{% else %}#dc2626{% endif %};
+                        border: 1px solid currentColor;
+                        font-weight: 700;
+                    ">
+                        {{ risk_status }} RISK ({{ risk_score }}/100)
+                    </span>
+                    <p style="margin:0.5rem 0 0 0; font-size:0.85rem; color:var(--text-muted); font-weight:500;">AI Clinical Inference</p>
+                </div>
+            </div>
+            <!-- Pregnancy Progress Bar -->
+            <div style="margin-top:2rem;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:0.75rem; font-size:0.95rem;">
+                    <span>Gestational Progress: <strong>Week {{ patient.gestational_week }}</strong></span>
+                    <span>Target: <strong>EDD (Week 40)</strong></span>
+                </div>
+                <div style="width:100%; height:12px; background:rgba(0,0,0,0.05); border-radius:6px; position:relative; overflow:hidden;">
+                    <div style="position:absolute; left:0; top:0; height:100%; background:linear-gradient(90deg, var(--sakura-pink), var(--fuji-blue)); border-radius:6px; width: {{ (patient.gestational_week | int / 40 * 100) | round }}%; transition: width 1s ease-out;"></div>
+                </div>
+                <p style="margin:0.75rem 0 0 0; font-size:0.9rem; color:var(--text-muted);">
+                    <i class="fa-solid fa-calendar-check"></i> Expected Delivery: <strong>{{ patient.edd_date }}</strong>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Stats Cards -->
+    <div style="display:grid; grid-template-columns:1fr; gap:1rem;">
+        <div class="glass-card" style="padding:1.5rem; background:rgba(239, 68, 68, 0.04); border-left: 5px solid #ef4444;">
+            <div style="display:flex; align-items:center; gap:0.5rem; color:var(--text-muted); font-size:0.9rem; margin-bottom:0.5rem;">
+                <i class="fa-solid fa-droplet" style="color:#ef4444;"></i> Blood Group
+            </div>
+            <div style="font-size:1.8rem; font-weight:800; color:var(--fuji-dark);">{{ patient.blood_group or 'Unknown' }}</div>
+        </div>
+        <div class="glass-card" style="padding:1.5rem; background:rgba(16, 185, 129, 0.04); border-left: 5px solid #10b981;">
+            <div style="display:flex; align-items:center; gap:0.5rem; color:var(--text-muted); font-size:0.9rem; margin-bottom:0.5rem;">
+                <i class="fa-solid fa-person-breastfeeding" style="color:#10b981;"></i> Parity
+            </div>
+            <div style="font-size:1.6rem; font-weight:800; color:var(--fuji-dark);">{{ 'First Pregnancy' if patient.first_pregnancy == 'Yes' else 'Multi-gravida' }}</div>
+        </div>
+    </div>
+</div>
+
+<!-- MAIN DASHBOARD CONTENT: Clinical Factors -->
+<div style="display:grid; grid-template-columns: 2fr 1fr; gap:1.5rem;">
+    <!-- LEFT COLUMN: The 4 Factors -->
+    <div style="display:flex; flex-direction:column; gap:1.5rem;">
+        
+        <!-- FACTOR 1: Obstetric & Clinical History -->
+        <div class="glass-card">
+            <h3 style="margin-top:0; border-bottom:1px solid var(--border); padding-bottom:1rem; color:var(--fuji-dark);"><i class="fa-solid fa-book-medical" style="color:var(--fuji-blue);"></i> Factor 1: Obstetric & Clinical History</h3>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1.2rem; margin-top:1.2rem;">
+                {% for label, val in factors.clinical.items() %}
+                <div style="padding:1rem; background:rgba(255,255,255,0.4); border-radius:14px; border:1px solid rgba(0,0,0,0.05);">
+                    <small style="color:var(--text-muted); display:block; margin-bottom:0.25rem; font-weight:600;">{{ label }}</small>
+                    <div style="font-weight:700; font-size:1.1rem; color:var(--fuji-dark);">{{ val }}</div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- FACTOR 2: Medical Background & Screening -->
+        <div class="glass-card">
+            <h3 style="margin-top:0; border-bottom:1px solid var(--border); padding-bottom:1rem; color:var(--fuji-dark);"><i class="fa-solid fa-viruses" style="color:#10b981;"></i> Factor 2: Medical Background & Screening</h3>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1.2rem; margin-top:1.2rem;">
+                {% for label, val in factors.background.items() %}
+                <div style="padding:1rem; background:rgba(255,255,255,0.4); border-radius:14px; border:1px solid rgba(0,0,0,0.05);">
+                    <small style="color:var(--text-muted); display:block; margin-bottom:0.25rem; font-weight:600;">{{ label }}</small>
+                    <div style="font-weight:700; font-size:1.05rem; color:var(--fuji-dark);">{{ val }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            <div style="margin-top:1.5rem; padding:1.2rem; background:rgba(30, 58, 95, 0.03); border-radius:15px; border: 1px dashed var(--border);">
+                <div style="margin-bottom:0.75rem; font-weight:700; color:var(--fuji-dark); font-size:0.9rem;">Patient Screening Matrix</div> 
+                <div style="display:flex; flex-wrap:wrap; gap:0.5rem;">
+                {% for label, val in factors.screening.items() %}
+                <span style="
+                    padding:0.4rem 0.8rem; 
+                    border-radius:8px; 
+                    background:{% if val == 'Yes' %}#fee2e2; color:#991b1b;{% else %}#d1fae5; color:#065f46;{% endif %}; 
+                    font-size:0.8rem; 
+                    font-weight:600;
+                    border: 1px solid rgba(0,0,0,0.05);
+                ">{{ label }}: {{ val }}</span>
+                {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- FACTOR 3: Risk Trend Chart -->
+        <div class="glass-card">
+            <h3 style="margin-top:0; color:var(--fuji-dark);"><i class="fa-solid fa-chart-line" style="color:var(--sakura-pink);"></i> Factor 3: Risk Score Progression</h3>
+            <div style="height:320px; margin-top:1rem; width:100%;">
+                <canvas id="progressionChart"></canvas>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- RIGHT COLUMN: AI Insights & Current State -->
+    <div style="display:flex; flex-direction:column; gap:1.5rem;">
+        
+        <!-- AI SUMMARY CARD -->
+        <div class="glass-card" style="background: linear-gradient(135deg, rgba(255,255,255,0.9), rgba(252, 231, 243, 0.5)); border: 2px solid var(--sakura-pink);">
+            <h3 style="margin-top:0; color:var(--sakura-deep); display:flex; align-items:center; gap:0.5rem;">
+                <i class="fa-solid fa-microchip-ai"></i> AI Summary
+            </h3>
+            
+            <div style="margin: 1.2rem 0;">
+                <small style="color:var(--sakura-deep); font-weight:700; text-transform:uppercase; letter-spacing:0.5px; font-size:0.75rem;">Risk Rationale</small>
+                <p style="font-weight:600; line-height:1.5; color:var(--fuji-dark); margin-top:0.4rem;">
+                    {{ ai_summary.reasoning }}
+                </p>
+            </div>
+
+            <div style="padding:1.2rem; border-radius:15px; background:white; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
+                <small style="color:var(--fuji-blue); font-weight:700; text-transform:uppercase; letter-spacing:0.5px; font-size:0.75rem;">Recommended Actions</small>
+                <ul style="margin:0.6rem 0 0 0; padding-left:1.2rem; color:var(--fuji-dark); font-weight:500; font-size:0.9rem; display:flex; flex-direction:column; gap:0.5rem;">
+                    {% if ai_summary.recommendations %}
+                        {% for item in ai_summary.recommendations %}
+                            <li>{{ item }}</li>
+                        {% endfor %}
+                    {% else %}
+                        <li>Continue routine monitoring as per protocol.</li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+
+        <!-- FACTOR 4: Current Symptoms -->
+        <div class="glass-card" style="background:rgba(255,255,255,0.5); border-left: 5px solid {% if patient.danger_signs == 'Yes' %}#ef4444{% else %}var(--border){% endif %};">
+            <h3 style="margin-top:0; color:{% if patient.danger_signs == 'Yes' %}#ef4444{% else %}var(--fuji-dark){% endif %};">
+                <i class="fa-solid fa-stethoscope"></i> Factor 4: Current State
+            </h3>
+            
+            <div style="margin: 1rem 0;">
+                <small style="color:var(--text-muted); display:block; font-weight:600;">Active Symptoms</small>
+                <p style="font-weight:700; line-height:1.4; color:var(--fuji-dark); margin-top:0.3rem;">{{ patient.current_symptoms }}</p>
+            </div>
+
+            <div style="padding:1rem; border-radius:14px; background:{% if patient.danger_signs == 'Yes' %}#fee2e2{% else %}#f3f4f6{% endif %}; border: 1px solid {% if patient.danger_signs == 'Yes' %}#ef4444{% else %}transparent{% endif %};">
+                <div style="display:flex; align-items:center; gap:0.5rem; color:{% if patient.danger_signs == 'Yes' %}#991b1b{% else %}var(--text-muted){% endif %}; font-weight:700; font-size:0.85rem;">
+                    <i class="fa-solid fa-triangle-exclamation"></i> Danger Signs Present?
+                </div>
+                <div style="font-size:1.3rem; font-weight:800; margin-top:0.2rem; color:{% if patient.danger_signs == 'Yes' %}#ef4444{% else %}var(--fuji-dark){% endif %};">{{ patient.danger_signs }}</div>
+            </div>
+
+            <div style="margin-top:1.5rem; border-top:1px solid rgba(0,0,0,0.05); padding-top:1rem;">
+                <small style="color:var(--text-muted); display:block; margin-bottom:0.4rem; font-weight:600;">Emergency Context</small>
+                <div style="display:flex; align-items:center; gap:10px; font-weight:700; color:var(--fuji-dark);">
+                    <i class="fa-solid fa-user-shield" style="color:var(--fuji-blue);"></i> {{ patient.emergency_contact }}
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    const pCtx = document.getElementById('progressionChart').getContext('2d');
+    
+    new Chart(pCtx, {
+        type: 'line',
+        data: {
+            labels: {{ graph_weeks | tojson }},
+            datasets: [{
+                label: 'Risk Score History',
+                data: {{ graph_scores | tojson }},
+                borderColor: '#f472b6',
+                borderWidth: 3,
+                backgroundColor: 'rgba(244, 114, 182, 0.1)',
+                fill: true,
+                tension: 0.4,
+                pointRadius: 6,
+                pointBackgroundColor: '#f472b6',
+                pointBorderColor: '#fff',
+                pointBorderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: { 
+                    beginAtZero: true, 
+                    max: 100,
+                    grid: { color: 'rgba(0,0,0,0.03)' },
+                    ticks: { font: { weight: '600' } }
+                },
+                x: { 
+                    grid: { display: false },
+                    ticks: { font: { weight: '600' } }
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: 'rgba(30, 58, 95, 0.9)',
+                    padding: 12,
+                    titleFont: { size: 14, weight: 'bold' },
+                    bodyFont: { size: 13 },
+                    cornerRadius: 10,
+                    displayColors: false
+                }
+            }
+        }
+    });
+</script>
+{% endblock %}
