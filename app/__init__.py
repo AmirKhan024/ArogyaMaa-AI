@@ -6,6 +6,7 @@ It creates and configures the Flask application with all necessary blueprints.
 """
 
 import logging
+import os
 
 from flask import Flask
 from app.config import get_config
@@ -58,8 +59,33 @@ def create_app(config_name='development'):
     
     # Register route protection
     register_route_protection(app)
-    
+
+    # PWA: serve the service worker from the app root so its scope can cover /asha/*.
+    register_pwa(app)
+
     return app
+
+
+def register_pwa(app):
+    """
+    Serve the ASHA offline PWA's service worker from the root path.
+
+    A service worker can only control pages at or below the path it is served from, so the
+    file physically living in ``app/static/js/sw.js`` must also be reachable at ``/sw.js``
+    with the ``Service-Worker-Allowed: /`` header to control the whole origin (the ASHA
+    dashboard lives under ``/asha/dashboard``). This path matches no protected prefix, so the
+    central auth guard leaves it public automatically.
+    """
+    from flask import send_from_directory, make_response
+
+    @app.route('/sw.js')
+    def service_worker():
+        js_dir = os.path.join(app.static_folder, 'js')
+        resp = make_response(send_from_directory(js_dir, 'sw.js'))
+        resp.headers['Content-Type'] = 'application/javascript'
+        resp.headers['Service-Worker-Allowed'] = '/'
+        resp.headers['Cache-Control'] = 'no-cache'
+        return resp
 
 
 def register_blueprints(app):

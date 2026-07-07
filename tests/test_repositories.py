@@ -46,3 +46,18 @@ def test_assessment_client_uuid_idempotency():
     a1 = assessments_repo.create(dict(payload))
     a2 = assessments_repo.create(dict(payload))  # replay must not duplicate
     assert a1 == a2
+    # Exactly one row exists for the mother despite the replay.
+    assert len(assessments_repo.list_by_mother(mid)) == 1
+
+
+def test_assessment_without_client_uuid_is_not_deduped():
+    """Online submits carry no client_uuid; each must create its own row (no '' collision)."""
+    from app.db import new_uuid
+    from app.repositories import mothers_repo, assessments_repo
+    cid = "test_" + new_uuid()[:8]
+    mid = mothers_repo.create({"name": "M2", "telegram_chat_id": cid})
+    base = {"mother_id": mid, "vitals": {"bp_systolic": 118}, "symptoms": []}
+    a1 = assessments_repo.create(dict(base))
+    a2 = assessments_repo.create(dict(base))
+    assert a1 != a2
+    assert len(assessments_repo.list_by_mother(mid)) == 2

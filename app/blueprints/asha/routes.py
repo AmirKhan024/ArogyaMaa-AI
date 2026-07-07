@@ -244,7 +244,13 @@ def submit_assessment():
             'gestational_age_at_assessment': gestational_age,
             'documents_uploaded': data.get('documents_uploaded', [])
         }
-        
+
+        # Offline-first idempotency: field captures made without connectivity carry a
+        # client-generated UUID so replays after sync never create duplicate rows.
+        client_uuid = data.get('client_uuid')
+        if client_uuid:
+            assessment_data['client_uuid'] = client_uuid
+
         assessment_id = assessments_repo.create(assessment_data)
         
         # Log the assessment
@@ -364,7 +370,8 @@ def submit_assessment():
             "mother_name": mother.get('name'),
             "asha_name": asha_worker.get('name'),
             "timestamp": assessment.get('timestamp').isoformat() if assessment.get('timestamp') else None,
-            "ai_evaluation_status": ai_evaluation_status
+            "ai_evaluation_status": ai_evaluation_status,
+            "client_uuid": client_uuid,
         }
         
         # Add AI results to response if completed

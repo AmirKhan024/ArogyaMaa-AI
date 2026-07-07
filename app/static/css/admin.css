@@ -266,6 +266,48 @@ body {
     border: 1px solid var(--glass-border);
 }
 
+/* ── PWA connectivity + offline-sync indicators ─────────────────────── */
+.conn-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 0.4rem 0.8rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+.conn-pill.conn-online {
+    color: #15803d;
+    background: rgba(74, 222, 128, 0.15);
+    border-color: rgba(74, 222, 128, 0.4);
+}
+.conn-pill.conn-offline {
+    color: #b45309;
+    background: rgba(251, 191, 36, 0.18);
+    border-color: rgba(251, 191, 36, 0.5);
+}
+.sync-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #fff;
+    padding: 0.4rem 0.8rem;
+    border-radius: 999px;
+    background: linear-gradient(135deg, var(--fuji-600), var(--sakura-600));
+    box-shadow: 0 2px 8px rgba(219, 39, 119, 0.25);
+}
+.sync-chip i {
+    animation: sync-pulse 1.6s ease-in-out infinite;
+}
+@keyframes sync-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+}
+
 /* ─── Alert Container ─────────────────────────────────────────────────────── */
 
 #alert-container {

@@ -16,6 +16,12 @@
     
     <!-- Reuse Theme CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+
+    <!-- PWA (offline-first ASHA field capture) -->
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+    <meta name="theme-color" content="#1e3a5f">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32.png') }}">
 </head>
 <body>
     <div class="admin-container">
@@ -79,6 +85,13 @@
             <header class="page-header">
                 <h1>{% block page_title %}ASHA Dashboard{% endblock %}</h1>
                 <div class="header-actions">
+                    <span id="sync-chip" class="sync-chip" style="display: none;">
+                        <i class="fa-solid fa-cloud-arrow-up"></i>
+                        <span id="sync-count">0</span> pending sync
+                    </span>
+                    <span id="conn-pill" class="conn-pill conn-online" title="Connectivity">
+                        <i class="fa-solid fa-wifi"></i> <span id="conn-text">Online</span>
+                    </span>
                     <span class="timestamp">Last updated: <span id="last-update">--</span></span>
                 </div>
             </header>
@@ -124,8 +137,49 @@
             updateNotificationBadge();
             setInterval(updateNotificationBadge, 60000);
         });
+
+        // ── PWA: service worker + connectivity/pending-sync UI ──────────────
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js', { scope: '/' })
+                    .catch(err => console.warn('[ASHA] SW registration failed:', err));
+            });
+        }
+
+        function renderConnectivity() {
+            const pill = document.getElementById('conn-pill');
+            const text = document.getElementById('conn-text');
+            const icon = pill ? pill.querySelector('i') : null;
+            if (!pill) return;
+            const online = navigator.onLine;
+            pill.classList.toggle('conn-online', online);
+            pill.classList.toggle('conn-offline', !online);
+            if (text) text.textContent = online ? 'Online' : 'Offline';
+            if (icon) icon.className = online ? 'fa-solid fa-wifi' : 'fa-solid fa-plane';
+        }
+
+        function renderPending(count) {
+            const chip = document.getElementById('sync-chip');
+            const num = document.getElementById('sync-count');
+            if (!chip || !num) return;
+            num.textContent = count;
+            chip.style.display = count > 0 ? 'inline-flex' : 'none';
+        }
+
+        window.addEventListener('online', renderConnectivity);
+        window.addEventListener('offline', renderConnectivity);
+        document.addEventListener('DOMContentLoaded', () => {
+            renderConnectivity();
+            if (window.OfflineQueue && window.OfflineQueue.isSupported()) {
+                window.OfflineQueue.onChange(renderPending);
+                window.OfflineQueue.pendingCount().then(renderPending);
+            }
+        });
     </script>
-    
+
+    <!-- Offline queue (IndexedDB) — must load before page scripts that enqueue -->
+    <script src="{{ url_for('static', filename='js/offline-queue.js') }}"></script>
+
     <!-- Custom JS -->
     <script src="{{ url_for('static', filename='js/admin_dashboard.js') }}"></script>
     {% block extra_js %}{% endblock %}

@@ -225,8 +225,13 @@ document.getElementById('assessment-form').addEventListener('submit', async (e) 
     const symptoms = Array.from(document.querySelectorAll('input[name="symptoms"]:checked'))
         .map(cb => cb.value);
     
-    // Build assessment payload
+    // Build assessment payload. A client-generated UUID makes server ingest idempotent, so
+    // an offline capture that is later replayed (or double-submitted) never duplicates a row.
+    const clientUuid = (window.crypto && window.crypto.randomUUID)
+        ? window.crypto.randomUUID()
+        : 'cu-' + Date.now() + '-' + Math.round(Math.random() * 1e9);
     const payload = {
+        client_uuid: clientUuid,
         asha_id: ASHA_ID,
         mother_id: motherId,
         vitals: {
@@ -250,26 +255,57 @@ document.getElementById('assessment-form').addEventListener('submit', async (e) 
     const submitBtn = document.getElementById('submit-btn');
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Submitting...';
-    
+
+    // Offline-first: if there is no connection, save locally and let the queue sync later.
+    // The AI risk analysis runs server-side on sync, so no AI keys are needed in the field.
+    if (!navigator.onLine && window.OfflineQueue && window.OfflineQueue.isSupported()) {
+        try {
+            await window.OfflineQueue.enqueue(payload);
+            showAlert('No connection — assessment saved offline. It will sync automatically when you are back online.', 'warning');
+            resetForm();
+        } catch (err) {
+            console.error('Failed to save assessment offline:', err);
+            showAlert('Could not save assessment offline: ' + err.message, 'error');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Submit Assessment';
+        }
+        return;
+    }
+
     try {
         const response = await fetch('/asha/assessment', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-        
+
         const result = await response.json();
-        
+
         if (response.ok) {
             showAssessmentResult(result);
             resetForm();
         } else {
             throw new Error(result.error || 'Assessment submission failed');
         }
-        
+
     } catch (error) {
-        console.error('Assessment submission failed:', error);
-        showAlert('Assessment submission failed: ' + error.message, 'error');
+        // A TypeError here means the network dropped mid-request (offline). Queue it instead
+        // of losing the capture; genuine HTTP errors above are surfaced to the worker.
+        const looksOffline = (error instanceof TypeError) || !navigator.onLine;
+        if (looksOffline && window.OfflineQueue && window.OfflineQueue.isSupported()) {
+            try {
+                await window.OfflineQueue.enqueue(payload);
+                showAlert('Connection lost — assessment saved offline. It will sync automatically when you are back online.', 'warning');
+                resetForm();
+            } catch (qErr) {
+                console.error('Failed to save assessment offline:', qErr);
+                showAlert('Assessment submission failed: ' + qErr.message, 'error');
+            }
+        } else {
+            console.error('Assessment submission failed:', error);
+            showAlert('Assessment submission failed: ' + error.message, 'error');
+        }
     } finally {
         submitBtn.disabled = false;
         submitBtn.textContent = 'Submit Assessment';

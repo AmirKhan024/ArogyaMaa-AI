@@ -6,6 +6,8 @@ SINGLE SOURCE OF TRUTH for all health assessments. Function names, signatures, a
 return shapes preserved from the MongoDB version.
 """
 
+from sqlalchemy.exc import IntegrityError
+
 from app.repositories._sql import (
     fetch_all, fetch_one, insert_row, update_by_id, scalar, utcnow,
 )
@@ -33,13 +35,16 @@ def create(assessment_data):
     """
     assessment_data = dict(assessment_data)
 
+    # Offline replays carry a client-generated ``client_uuid``. Short-circuit if we have
+    # already ingested it so a flaky-network retry never creates a duplicate row.
     client_uuid = assessment_data.get("client_uuid")
     if client_uuid:
-        existing = fetch_one(
-            "select id from assessments where client_uuid = :cu", {"cu": client_uuid}
-        )
+        existing = _find_by_client_uuid(client_uuid)
         if existing:
-            return str(existing["id"])
+            return existing
+    else:
+        # Never write an empty string into the unique column (would collide across rows).
+        assessment_data.pop("client_uuid", None)
 
     assessment_data.setdefault("timestamp", utcnow())
     assessment_data.setdefault("symptoms", [])
@@ -57,10 +62,27 @@ def create(assessment_data):
     )
     assessment_data["assessment_number"] = (count or 0) + 1
 
-    return insert_row(
-        "assessments", assessment_data,
-        known_cols=_KNOWN, jsonb_cols=_JSONB, uuid_cols=_UUID,
+    try:
+        return insert_row(
+            "assessments", assessment_data,
+            known_cols=_KNOWN, jsonb_cols=_JSONB, uuid_cols=_UUID,
+        )
+    except IntegrityError:
+        # Race: a concurrent replay of the same client_uuid inserted first and tripped the
+        # unique constraint. Treat it as idempotent success and return the winning row.
+        if client_uuid:
+            existing = _find_by_client_uuid(client_uuid)
+            if existing:
+                return existing
+        raise
+
+
+def _find_by_client_uuid(client_uuid):
+    """Return the id (str) of an assessment with this client_uuid, or None."""
+    row = fetch_one(
+        "select id from assessments where client_uuid = :cu", {"cu": client_uuid}
     )
+    return str(row["id"]) if row else None
 
 
 def get_by_id(assessment_id):
