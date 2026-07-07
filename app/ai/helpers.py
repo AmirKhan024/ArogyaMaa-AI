@@ -4,8 +4,11 @@ AI Evaluation Helpers
 Functions to transform LangGraph output into MongoDB ai_evaluation schema.
 """
 
-from datetime import datetime
+import logging
+from datetime import datetime, timezone
 from typing import Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 
 def build_ai_evaluation(langgraph_result: Dict, langsmith_trace_id: Optional[str] = None) -> Dict:
@@ -35,7 +38,7 @@ def build_ai_evaluation(langgraph_result: Dict, langsmith_trace_id: Optional[str
         }
     """
     # Debug: Print all keys in langgraph_result
-    print(f"[HELPER] LangGraph result keys: {list(langgraph_result.keys())}")
+    logger.info(f"[HELPER] LangGraph result keys: {list(langgraph_result.keys())}")
     
     # Extract risk stratification result to get risk level and score
     risk_strat = langgraph_result.get("risk_stratification_result", {})
@@ -65,7 +68,7 @@ def build_ai_evaluation(langgraph_result: Dict, langsmith_trace_id: Optional[str
             "clinical_flags": risk_strat.get("clinical_flags", []),  # NEW: Add flags
             "reasoning": risk_strat.get("reasoning", "No reasoning provided")
         }
-        print(f"[HELPER] Risk stratification: {risk_level} ({risk_score}/100)")
+        logger.info(f"[HELPER] Risk stratification: {risk_level} ({risk_score}/100)")
     
     # Symptom Reasoning
     if "symptom_reasoning_result" in langgraph_result:
@@ -80,7 +83,7 @@ def build_ai_evaluation(langgraph_result: Dict, langsmith_trace_id: Optional[str
             "severity_assessment": symp_reason.get("combined_severity", "unknown"),
             "reasoning": symp_reason.get("reasoning", "No reasoning provided")
         }
-        print(f"[HELPER] Symptom reasoning: {len(clusters)} clusters detected")
+        logger.info(f"[HELPER] Symptom reasoning: {len(clusters)} clusters detected")
     
     # Trend Analysis
     if "trend_analysis_result" in langgraph_result:
@@ -93,7 +96,7 @@ def build_ai_evaluation(langgraph_result: Dict, langsmith_trace_id: Optional[str
             "stable_indicators": trend.get("stable_indicators", []),
             "reasoning": trend.get("reasoning", "No reasoning provided")
         }
-        print(f"[HELPER] Trend analysis: {agent_outputs['trend_analysis']['trend_direction']}")
+        logger.info(f"[HELPER] Trend analysis: {agent_outputs['trend_analysis']['trend_direction']}")
     
     # Document Analysis
     if "document_analysis_result" in langgraph_result:
@@ -104,7 +107,7 @@ def build_ai_evaluation(langgraph_result: Dict, langsmith_trace_id: Optional[str
             "summary": doc.get("reasoning", "No documents uploaded for analysis"),
             "reasoning": doc.get("reasoning", "No documents uploaded for analysis")
         }
-        print(f"[HELPER] Document analysis: {doc.get('documents_processed', 0)} docs processed")
+        logger.info(f"[HELPER] Document analysis: {doc.get('documents_processed', 0)} docs processed")
     
     # Nutrition & Lifestyle
     if "nutrition_lifestyle_result" in langgraph_result:
@@ -118,7 +121,7 @@ def build_ai_evaluation(langgraph_result: Dict, langsmith_trace_id: Optional[str
             "recommendations": nutrition.get("dietary_recommendations", []),  # For JS compatibility
             "reasoning": nutrition.get("reasoning", "No reasoning provided")
         }
-        print(f"[HELPER] Nutrition: {len(nutrition.get('dietary_recommendations', []))} dietary recs")
+        logger.info(f"[HELPER] Nutrition: {len(nutrition.get('dietary_recommendations', []))} dietary recs")
     
     # Communication
     if "communication_result" in langgraph_result:
@@ -131,7 +134,7 @@ def build_ai_evaluation(langgraph_result: Dict, langsmith_trace_id: Optional[str
             "asha_message": comm.get("message_for_asha", ""),
             "doctor_message": comm.get("message_for_doctor", "")
         }
-        print(f"[HELPER] Communication messages generated for all stakeholders")
+        logger.info(f"[HELPER] Communication messages generated for all stakeholders")
     
     # Build ai_evaluation object
     ai_evaluation = {
@@ -141,7 +144,7 @@ def build_ai_evaluation(langgraph_result: Dict, langsmith_trace_id: Optional[str
         "agent_outputs": agent_outputs,
         "recommended_actions": [],  # Will be populated from agents
         "requires_doctor_review": risk_level in ["HIGH", "CRITICAL"],  # Auto-flag urgent cases
-        "evaluated_at": datetime.utcnow()
+        "evaluated_at": datetime.now(timezone.utc)
     }
     
     # Extract recommended actions from various agents

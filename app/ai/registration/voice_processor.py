@@ -6,9 +6,12 @@ for voice-enabled registration flow.
 """
 
 import os
+import logging
 import edge_tts
 from pydub import AudioSegment
 from groq import Groq
+
+logger = logging.getLogger(__name__)
 
 # Ensure there's a temp dir for audio processing
 temp_dir = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'tmp')
@@ -39,7 +42,7 @@ class VoiceProcessor:
                 )
             return translation.text
         except Exception as e:
-            print(f"Error in Groq STT: {e}")
+            logger.error(f"Error in Groq STT: {e}")
             return "Could not understand audio clearly."
 
     async def text_to_audio(self, text: str, lang: str = 'hi') -> str:
@@ -74,5 +77,5 @@ class VoiceProcessor:
 
             return ogg_path
         except Exception as e:
-            print(f"Error in Edge-TTS: {e}")
+            logger.error(f"Error in Edge-TTS: {e}")
             return None

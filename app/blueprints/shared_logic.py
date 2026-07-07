@@ -3,9 +3,12 @@ Shared logic for ArogyaMaa Dashboards
 Common data preparation for views used by both Doctors and ASHA workers.
 """
 
+import logging
 import traceback
 from datetime import datetime
 from app.repositories import mothers_repo, assessments_repo
+
+logger = logging.getLogger(__name__)
 
 
 def _safe_str(val, default='N/A'):
@@ -27,12 +30,12 @@ def get_clinical_portfolio_context(mother_id):
     try:
         mother = mothers_repo.get_by_id(mother_id)
     except Exception as e:
-        print(f"[PORTFOLIO] CRITICAL: mothers_repo.get_by_id({mother_id}) raised: {e}")
-        print(traceback.format_exc())
+        logger.error(f"[PORTFOLIO] CRITICAL: mothers_repo.get_by_id({mother_id}) raised: {e}")
+        logger.error(traceback.format_exc())
         return None
 
     if not mother:
-        print(f"[PORTFOLIO] Mother {mother_id} not found in 'mothers' collection")
+        logger.info(f"[PORTFOLIO] Mother {mother_id} not found in 'mothers' collection")
         return None
 
     # --- Step 2: Fetch Assessments (non-fatal) ---
@@ -41,13 +44,13 @@ def get_clinical_portfolio_context(mother_id):
     try:
         latest_assessment = assessments_repo.get_latest_for_mother(mother_id)
     except Exception as e:
-        print(f"[PORTFOLIO] WARNING: get_latest_for_mother failed: {e}")
+        logger.warning(f"[PORTFOLIO] WARNING: get_latest_for_mother failed: {e}")
 
     try:
         history = list(assessments_repo.list_by_mother(mother_id, limit=20))
         history.reverse()
     except Exception as e:
-        print(f"[PORTFOLIO] WARNING: list_by_mother failed: {e}")
+        logger.warning(f"[PORTFOLIO] WARNING: list_by_mother failed: {e}")
         history = []
 
     # --- Step 3: Extract Risk Data ---
@@ -70,7 +73,7 @@ def get_clinical_portfolio_context(mother_id):
                 'recommendations': recommendations if isinstance(recommendations, list) else []
             }
     except Exception as e:
-        print(f"[PORTFOLIO] WARNING: risk extraction failed: {e}")
+        logger.warning(f"[PORTFOLIO] WARNING: risk extraction failed: {e}")
 
     # --- Step 4: Clinical Factors ---
     # Supports two schema shapes:
@@ -159,7 +162,7 @@ def get_clinical_portfolio_context(mother_id):
                 graph_weeks.append('?')
                 graph_scores.append(0)
     except Exception as e:
-        print(f"[PORTFOLIO] WARNING: chart data build failed: {e}")
+        logger.warning(f"[PORTFOLIO] WARNING: chart data build failed: {e}")
 
     # --- Step 6: Current State ---
     # Prefer values from latest assessment, fall back to root-level fields (Telegram schema)
@@ -180,7 +183,7 @@ def get_clinical_portfolio_context(mother_id):
             if ds:
                 danger_signs = str(ds)
     except Exception as e:
-        print(f"[PORTFOLIO] WARNING: current state extraction failed: {e}")
+        logger.warning(f"[PORTFOLIO] WARNING: current state extraction failed: {e}")
 
     # --- Step 7: Assemble Patient Info ---
     try:
@@ -258,8 +261,8 @@ def get_clinical_portfolio_context(mother_id):
         }
 
     except Exception as e:
-        print(f"[PORTFOLIO] CRITICAL: patient_info assembly failed: {e}")
-        print(traceback.format_exc())
+        logger.error(f"[PORTFOLIO] CRITICAL: patient_info assembly failed: {e}")
+        logger.error(traceback.format_exc())
         # Absolute fallback — always show something real from the DB record
         patient_info = {
             "id": str(mother.get('_id', '')),

@@ -5,12 +5,15 @@ This script starts the Flask development server.
 It uses the app factory pattern to create the application instance.
 """
 
+import logging
 import os
 import sys
 if sys.platform == 'win32':
     import io
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 from app import create_app
+
+logger = logging.getLogger(__name__)
 
 # Determine environment from .env or default to development
 env = os.getenv('APP_ENV', 'development')
@@ -24,26 +27,8 @@ if __name__ == '__main__':
     port = app.config.get('PORT', 5000)
     debug = app.config.get('DEBUG', True)
     
-    print(f"""
-    ╔═══════════════════════════════════════╗
-    ║   ArogyaMaa Backend Server          ║
-    ║   Environment: {env:24s} ║
-    ║   Running on: http://{host}:{port}      ║
-    ╚═══════════════════════════════════════╝
-    
-    Available endpoints:
-    - /telegram/webhook   → Telegram bot webhook
-    - /telegram/health    → Telegram service health
-    - /admin/analytics    → Admin analytics
-    - /admin/assign       → Assign workers
-    - /asha/mothers       → ASHA assigned mothers
-    - /asha/assessment    → Submit assessment
-    - /asha/stats         → ASHA statistics
-    - /doctor/mothers     → Doctor assigned mothers
-    - /doctor/assessments → View assessments
-    - /doctor/consultation → Submit consultation
-    - /doctor/message     → Send message to mother
-    - /ai/evaluate        → AI evaluation (placeholder)
-    """)
-    
+    logger.info(
+        "ArogyaMaa backend starting | env=%s | http://%s:%s", env, host, port
+    )
+
     app.run(host=host, port=port, debug=debug)

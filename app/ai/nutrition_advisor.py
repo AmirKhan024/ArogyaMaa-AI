@@ -11,12 +11,15 @@ Uses:
 """
 
 import os
+import logging
 from datetime import datetime
 from typing import Dict, Optional
 from groq import Groq
 import json
 
 from app.repositories import mothers_repo, assessments_repo, messages_repo, consultations_repo
+
+logger = logging.getLogger(__name__)
 
 # Initialize Groq client
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
@@ -160,7 +163,7 @@ def generate_nutrition_recommendation(mother_id, query_text: str) -> str:
         health_ctx = gather_health_context(mother_id)
         
     except Exception as e:
-        print(f"[NUTRITION AI ERROR - Context Gathering] {str(e)}")
+        logger.error(f"[NUTRITION AI ERROR - Context Gathering] {str(e)}")
         import traceback
         traceback.print_exc()
         raise
@@ -268,7 +271,7 @@ Focus on practical, affordable Indian foods she can eat today.
         return formatted_msg
         
     except Exception as e:
-        print(f"[NUTRITION AI ERROR] {str(e)}")
+        logger.error(f"[NUTRITION AI ERROR] {str(e)}")
         # Fallback response
         return f"""
 🍽️ {time_ctx['greeting']}, {health_ctx['mother_name']}!

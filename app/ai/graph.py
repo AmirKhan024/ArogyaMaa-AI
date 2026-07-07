@@ -5,6 +5,7 @@ Builds the multi-agent orchestration graph for ArogyaMaa.
 """
 
 import os
+import logging
 from langgraph.graph import StateGraph, END
 from langsmith import Client
 
@@ -19,6 +20,9 @@ from .agents import (
     communication_node,
     finalize_node
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def should_run_symptom_reasoning(state: ArogyaMaaState) -> str:
@@ -64,7 +68,7 @@ def create_ArogyaMaa_graph():
     if os.getenv("LANGCHAIN_TRACING_V2") == "true":
         os.environ["LANGCHAIN_TRACING_V2"] = "true"
         os.environ["LANGCHAIN_PROJECT"] = os.getenv("LANGSMITH_PROJECT", "ArogyaMaa")
-        print("[LANGGRAPH] LangSmith tracing enabled")
+        logger.info("[LANGGRAPH] LangSmith tracing enabled")
     
     # Create the graph
     workflow = StateGraph(ArogyaMaaState)

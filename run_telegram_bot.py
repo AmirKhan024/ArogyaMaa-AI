@@ -752,42 +752,41 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     """Start the bot in polling mode."""
     if not BOT_TOKEN:
-        print("❌ ERROR: TELEGRAM_BOT_TOKEN not found in .env file")
+        logger.error("TELEGRAM_BOT_TOKEN not found in .env file")
         return
 
     if db is None:
-        print("❌ ERROR: Database connection failed (check DATABASE_URL)")
+        logger.error("Database connection failed (check DATABASE_URL)")
         return
 
-    print(f"✅ Bot token found: {BOT_TOKEN[:10]}...")
-    print("✅ Postgres connected")
+    logger.info("Bot token found: %s...", BOT_TOKEN[:10])
+    logger.info("Postgres connected")
     if reg_engine:
-        print("✅ AI Registration Engine ready")
+        logger.info("AI Registration Engine ready")
     if voice_processor:
-        print("✅ Voice Processor ready (STT + TTS)")
-    print("🚀 Starting Telegram bot...")
-    print("\nBot is running! Press Ctrl+C to stop.\n")
+        logger.info("Voice Processor ready (STT + TTS)")
+    logger.info("Starting Telegram bot...")
+    logger.info("Bot is running! Press Ctrl+C to stop.")
 
     # Pre-flight connectivity check
     import httpx as _httpx
-    print("🔍 Checking connectivity to Telegram API...")
+    logger.info("Checking connectivity to Telegram API...")
     try:
         _test_client = _httpx.Client(timeout=10, proxy=HTTPS_PROXY if HTTPS_PROXY else None)
         _resp = _test_client.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getMe")
         _test_client.close()
         if _resp.status_code == 200:
             bot_info = _resp.json().get('result', {})
-            print(f"✅ Connected to Telegram! Bot: @{bot_info.get('username', 'unknown')}")
+            logger.info("Connected to Telegram! Bot: @%s", bot_info.get('username', 'unknown'))
         else:
-            print(f"⚠️ Telegram API returned status {_resp.status_code}")
+            logger.warning("Telegram API returned status %s", _resp.status_code)
     except Exception as _e:
-        print(f"⚠️ Cannot reach api.telegram.org: {_e}")
-        print("   Possible causes:")
-        print("   1. No internet connection")
-        print("   2. Telegram is blocked by your ISP/firewall")
-        print("   3. VPN/proxy needed - set HTTPS_PROXY in .env")
-        print("      Example: HTTPS_PROXY=http://127.0.0.1:1080")
-        print("   Will keep retrying...")
+        logger.warning("Cannot reach api.telegram.org: %s", _e)
+        logger.warning(
+            "Possible causes: (1) no internet, (2) Telegram blocked by ISP/firewall, "
+            "(3) VPN/proxy needed - set HTTPS_PROXY in .env "
+            "(e.g. HTTPS_PROXY=http://127.0.0.1:1080). Will keep retrying..."
+        )
 
     # Create application with increased timeouts for flaky networks
     builder = (
@@ -801,7 +800,7 @@ def main():
 
     # Add proxy support if configured
     if HTTPS_PROXY:
-        print(f"🌐 Using proxy: {HTTPS_PROXY}")
+        logger.info("Using proxy: %s", HTTPS_PROXY)
         from telegram.request import HTTPXRequest
         builder = builder.request(
             HTTPXRequest(
@@ -850,10 +849,9 @@ def main():
         set_appt_bot(app)  # Inject bot reference for Telegram notifications
         appt_thread = threading.Thread(target=run_appointment_webhook, daemon=True)
         appt_thread.start()
-        print("✅ Appointment webhook server started (port 5050)")
+        logger.info("Appointment webhook server started (port 5050)")
     except Exception as appt_err:
-        print(f"⚠️ Appointment webhook failed to start: {appt_err}")
-        logger.warning(f"Appointment webhook init failed: {appt_err}")
+        logger.warning("Appointment webhook failed to start: %s", appt_err)
 
     # Start polling with retries and drop_pending_updates
     # bootstrap_retries=-1 means infinite retries until connection succeeds

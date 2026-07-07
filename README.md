@@ -6,13 +6,16 @@
 
 **Because no mother should die from a complication that was predictable.**
 
-[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/Flask-3.0-000000?style=flat&logo=flask&logoColor=white)](https://flask.palletsprojects.com/)
-[![MongoDB](https://img.shields.io/badge/MongoDB-7.0-47A248?style=flat&logo=mongodb&logoColor=white)](https://www.mongodb.com/)
-[![LangGraph](https://img.shields.io/badge/LangGraph-1.0-1C3C3C?style=flat)](https://github.com/langchain-ai/langgraph)
-[![Groq](https://img.shields.io/badge/Groq-Llama_3.3_70B-F55036?style=flat)](https://groq.com/)
+[![Supabase](https://img.shields.io/badge/Supabase-Postgres-3ECF8E?style=flat&logo=supabase&logoColor=white)](https://supabase.com/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-multi--agent-1C3C3C?style=flat)](https://github.com/langchain-ai/langgraph)
+[![Groq](https://img.shields.io/badge/Groq-LLM_+_Whisper-F55036?style=flat)](https://groq.com/)
 [![ChromaDB](https://img.shields.io/badge/ChromaDB-RAG-FF6B6B?style=flat)](https://www.trychroma.com/)
+[![PWA](https://img.shields.io/badge/PWA-offline--first-5A0FC8?style=flat)](https://web.dev/progressive-web-apps/)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot_API-26A5E4?style=flat&logo=telegram&logoColor=white)](https://core.telegram.org/bots)
+
+<sub>**100% free-tier stack** — the only external services are Supabase (free Postgres) and Groq (free LLM + Whisper). No OpenAI, no paid HuggingFace keys.</sub>
 
 </div>
 
@@ -49,6 +52,7 @@ The deaths are not random. They cluster in three failures:
 - 🧠 **7 AI agents, not one LLM call** — Orchestrator → Risk Stratification → Symptom Reasoning → Trend Analysis → Nutrition/Lifestyle → Communication → Finalize, all coordinated by LangGraph.
 - 📚 **Clinically grounded, not black-box** — Risk scoring uses explicit WHO ANC thresholds (e.g., BP ≥160/110 = +30 points). Every AI decision is auditable.
 - 🛡️ **Safety-bounded by design** — RAG chatbot has query/response safety filters. Doctor AI is non-diagnostic by explicit system prompt. Fallback rule-based scoring ensures the system never fails silently.
+- 📴 **Offline-first field capture** — the ASHA dashboard is a PWA: assessments taken in no-signal villages are saved on-device (IndexedDB) and sync automatically when connectivity returns, deduplicated server-side so a replay never double-counts.
 - 🔗 **Four stakeholders, one story** — Mother, ASHA, doctor, and admin each see the same pregnancy from the angle they need.
 
 ---
@@ -146,6 +150,7 @@ Hospital or PHC admins see analytics across every mother, every ASHA, every doct
 - Receive prioritized task list for the day
 - Chat history with auto-generated titles
 - Message mothers and coordinate with doctors
+- **Works offline** — install the dashboard as an app; capture assessments with no signal and they sync automatically on reconnect
 
 ### 👨‍⚕️ Doctor — Web Dashboard
 - Triage list sorted by AI-determined urgency
@@ -215,46 +220,62 @@ Hospital or PHC admins see analytics across every mother, every ASHA, every doct
 
 | Layer | Technology |
 |-------|-----------|
-| **Backend** | Flask 3.0 (Python 3.10+) |
-| **Database** | MongoDB (PyMongo) — 9 collections with time-series vitals |
-| **LLM** | Groq API — Llama 3.3 70B (reasoning) + Llama 3.1 8B Instant (fast paths) |
-| **Agent orchestration** | LangGraph 1.0 + LangChain 1.2 |
-| **Observability** | LangSmith (full LLM tracing) |
-| **RAG** | ChromaDB + HuggingFace Embeddings (`all-MiniLM-L6-v2`) |
-| **Voice input** | Groq Whisper Large V3 (speech-to-text) |
-| **Voice output** | Edge-TTS (neural Hindi voices) |
-| **Messaging** | Telegram Bot API (webhook mode) |
+| **Backend** | Flask 3.0 (Python 3.11+) |
+| **Database** | Supabase **Postgres** via SQLAlchemy Core + psycopg3 (UUID PKs, JSONB for nested/AI blobs) |
+| **LLM** | Groq API — model from `LLM_MODEL` env (default `openai/gpt-oss-120b`, an **open-weights model served by Groq** — no OpenAI account) + `llama-3.1-8b-instant` for fast paths |
+| **Agent orchestration** | LangGraph + LangChain |
+| **Observability** | LangSmith (optional, free tier) |
+| **RAG** | ChromaDB + **local** sentence-transformers embeddings (`all-MiniLM-L6-v2`) — runs on-device, no API key |
+| **Voice input (STT)** | Groq Whisper Large V3 (free) |
+| **Voice output (TTS)** | Edge-TTS (free, no key) — neural Hindi voices |
+| **Messaging** | Telegram Bot API (polling) |
+| **Offline field capture** | PWA + service worker + IndexedDB sync queue (ASHA dashboard) |
 | **Frontend** | Jinja2 + Vanilla JS + Modern CSS (no SPA bloat) |
-| **Appointment booking (bonus module)** | OpenAI Realtime API + FSM |
+| **Appointment booking (bonus module)** | Groq Whisper STT + Edge-TTS + FSM (all free) |
+
+> **Security:** passwords are bcrypt-hashed; `SECRET_KEY` is required (the app fails fast without it); all `/admin /asha /doctor /api /ai` data routes are auth-guarded (session or an `X-Internal-Token` for bot→API calls); `/health` endpoints stay public.
 
 ---
 
-## 🚧 Prototype Status — Honest Scope
+## ✅ What's Working — Honest Scope
 
-This is a **hackathon prototype** — every feature listed above is implemented and working. It was built to prove the architecture, not to ship to 100,000 mothers tomorrow. Here's what's in the box vs. what's on the runway.
+Every feature listed above is implemented and runs on a **100% free-tier stack** (Supabase + Groq only). The project started as a hackathon build and has since been hardened toward an end-to-end product: the operational store moved from local MongoDB to Supabase Postgres, all voice moved to free Groq Whisper + Edge-TTS, passwords are bcrypt-hashed with auth-guarded APIs, and the ASHA dashboard is now an offline-first PWA.
 
-### ✅ Fully working in this prototype
-- LangGraph multi-agent workflow with 7 agents
-- 0-100 risk scoring with WHO-aligned thresholds + fallback
+### Fully working
+- LangGraph multi-agent workflow (orchestrator + specialist agents)
+- 0–100 risk scoring with WHO-aligned thresholds + rule-based fallback (degrades gracefully if the LLM key is missing or rate-limited)
 - Telegram bot (registration, voice, documents, alerts, messaging)
 - ASHA dashboard + RAG medical chatbot with safety filters
-- Doctor dashboard + AI case assistant
+- **Offline-first ASHA capture** — PWA + IndexedDB queue + idempotent server sync
+- Doctor dashboard + AI case assistant (non-diagnostic)
 - Admin dashboard + analytics
 - Time-aware nutrition advisor
 - Document upload + AI analysis pipeline
+- Supabase Postgres persistence, bcrypt auth, auth-guarded data APIs
+- `pytest` suite (risk scoring, auth, repository round-trips) + Docker/compose
 
-### 🧪 Partial / placeholder
-- **Document vision analysis** — OCR + LLM text analysis works; true multimodal image understanding is a stub
-- **Hindi only** — voice works for Hindi; other languages are templated but not active
+See **[Known Limitations & Roadmap](#-known-limitations--roadmap)** for the honest defect log.
 
 ---
 
-## 🗺️ Future Roadmap — The Real Vision
+## 🧭 Known Limitations & Roadmap
 
-The prototype is the minimum viable proof. The real system — the one that could run in every Primary Health Centre in India — looks like this:
+An honest defect log — because a healthcare tool earns trust by naming its edges, not hiding them.
+
+### Known limitations (today)
+- **Offline scope is the ASHA web dashboard only.** The mother-facing Telegram flow needs internet on the mother's phone; offline-first targets field capture by ASHA workers, which is where no-signal villages bite. AI risk analysis for an offline-captured assessment runs **server-side on sync**, not on the device — so no AI keys are needed in the field, but the risk score appears only after the item syncs.
+- **PWA offline shell caches on first online load.** A page must be opened online once (to be cached by the service worker) before it is available offline; CDN assets (fonts, icons) likewise need one online load.
+- **Supabase free tier auto-pauses** after ~7 days idle — open the dashboard once before a demo to wake it.
+- **Groq free tier is rate-limited** and rotates models. The model id is an env var (`LLM_MODEL`), so swapping a retired id is a one-line change; the rule-based fallback keeps the app working if the LLM is unavailable.
+- **Hindi only** — voice works for Hindi; other languages are templated but not active.
+- **Document vision** — OCR + LLM text analysis works; true multimodal image understanding is a stub.
+- **Static dev-admin login** — the admin login is a dev convenience gated behind `APP_ENV=development` + `ADMIN_PASSWORD`; there is no admin user table yet.
+
+### Roadmap — the real vision
+
+The real system — the one that could run in every Primary Health Centre in India — looks like this:
 
 ### Phase 2 — Reach
-- 🌐 **Offline-first PWA** for ASHA workers — rural India has ~31% internet penetration. The dashboard must work without connectivity, syncing when online.
 - 📱 **WhatsApp Business API integration** — Telegram has growing but limited rural penetration; WhatsApp is where 500M Indians already are.
 - 📞 **SMS + IVR fallback** — for mothers without smartphones at all. Twilio-backed fallback chain: Telegram → WhatsApp → SMS → automated voice call.
 - 🗣️ **Bhashini multilingual** — India's government ASR/TTS platform for 22 Indian languages: Hindi, Bengali, Tamil, Telugu, Marathi, Gujarati, and more.
@@ -287,9 +308,9 @@ The prototype is the minimum viable proof. The real system — the one that coul
 ## 🚀 Running Locally
 
 ### Prerequisites
-- Python 3.10+
-- MongoDB (local or Atlas URI)
-- Groq API key ([free at groq.com](https://groq.com))
+- Python 3.11+
+- A **Supabase** project (free) — or any Postgres — for `DATABASE_URL`
+- Groq API key ([free at groq.com](https://groq.com)) — the only AI key needed
 - Telegram Bot token ([via @BotFather](https://t.me/BotFather))
 
 ### Setup
@@ -298,13 +319,35 @@ git clone https://github.com/AmirKhan024/ArogyaMaa-AI.git
 cd ArogyaMaa-AI
 python -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env                               # fill in keys
-python app/rag/knowledge_ingestion.py              # build RAG vector DB (first run only)
-python run.py                                      # Flask server
-python run_telegram_bot.py                         # Telegram bot (separate terminal)
+cp .env.example .env
+# Fill in: SECRET_KEY, DATABASE_URL, GROQ_API_KEY, TELEGRAM_BOT_TOKEN, INTERNAL_API_TOKEN
+#   SECRET_KEY:         python -c "import secrets;print(secrets.token_hex(32))"
+#   DATABASE_URL:       Supabase → Project Settings → Database → Connection string → URI (pooler, port 6543)
+#   INTERNAL_API_TOKEN: any random hex (used for bot → API server-to-server calls)
+
+psql "$DATABASE_URL" -f db/schema.sql   # or paste db/schema.sql into the Supabase SQL editor
+python db/seed.py                       # seeds demo doctor/asha/mothers; prints credentials
+python app/rag/knowledge_ingestion.py   # build the local RAG vector DB (first run only)
+
+python run.py                           # Flask web server  → http://localhost:8000
+python run_telegram_bot.py              # Telegram bot (separate terminal)
 ```
 
-Dashboards open at `http://localhost:5000`.
+Demo credentials after seeding: `doctor / doctor123`, `asha / asha123` (admin via `ADMIN_PASSWORD` in dev). Dashboards open at `http://localhost:8000`.
+
+### Run with Docker
+```bash
+cp .env.example .env    # fill the same values as above (DB is your Supabase URL)
+docker compose up --build
+```
+This starts two services off one image — `web` (port 8000) and `bot` (appointment webhook on 5050) — both reading `.env`. The database is Supabase (cloud), so no DB container is needed; a commented local-Postgres service is included in `docker-compose.yml` for fully-offline dev.
+
+### Try the offline ASHA capture
+1. Log in as the seeded ASHA (`asha / asha123`) and open **New Assessment**; the header shows an **Online** pill.
+2. Open DevTools → **Network → Offline** (or Application → Service Workers → check *Offline*). The pill flips to **Offline**.
+3. Submit an assessment → it is saved on-device and a **"pending sync"** chip appears in the header.
+4. Turn the network back **Online** → the queue flushes automatically, the chip clears, and the row appears in Supabase. Submitting the same capture twice still results in exactly **one** row (idempotent on `client_uuid`).
+5. The dashboard shell also loads while offline once it has been opened online at least once (service-worker cache).
 
 ---
 

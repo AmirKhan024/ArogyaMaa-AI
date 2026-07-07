@@ -10,13 +10,16 @@ Each agent uses:
 
 import os
 import json
-from datetime import datetime
+import logging
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from groq import Groq
 from pydantic import BaseModel, Field, ValidationError
 
 from .state import ArogyaMaaState
 
+
+logger = logging.getLogger(__name__)
 
 # Initialize Groq client
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
@@ -108,19 +111,19 @@ def parse_and_validate(response_text: str, model_class: BaseModel) -> dict:
 
 def orchestrator_node(state: ArogyaMaaState) -> ArogyaMaaState:
     """Orchestrator - determines which agents to invoke"""
-    print("\n[ORCHESTRATOR] Starting AI analysis pipeline...")
-    
+    logger.info("\n[ORCHESTRATOR] Starting AI analysis pipeline...")
+
     agents_to_invoke = ["risk_stratification", "symptom_reasoning", "trend_analysis"]
-    
+
     if state.get("has_uploaded_documents"):
         agents_to_invoke.append("document_analysis")
-    
+
     agents_to_invoke.extend(["nutrition_lifestyle", "communication"])
-    
+
     state["agents_invoked"] = agents_to_invoke
-    state["timestamp"] = datetime.utcnow().isoformat()
-    
-    print(f"[ORCHESTRATOR] Will invoke: {', '.join(agents_to_invoke)}")
+    state["timestamp"] = datetime.now(timezone.utc).isoformat()
+
+    logger.info(f"[ORCHESTRATOR] Will invoke: {', '.join(agents_to_invoke)}")
     return state
 
 
@@ -137,7 +140,7 @@ def risk_stratification_node(state: ArogyaMaaState) -> ArogyaMaaState:
     MODERATE VITALS = MODERATE risk (30-60 points)
     NORMAL = LOW risk (0-30 points)
     """
-    print("\n[RISK STRATIFICATION] Analyzing with proper clinical scoring...")
+    logger.info("\n[RISK STRATIFICATION] Analyzing with proper clinical scoring...")
     
     vitals = state.get("vitals", {})
     symptoms = state.get("symptoms", [])
@@ -227,20 +230,20 @@ Return this EXACT JSON structure:
 }}"""
 
     try:
-        print(f"[RISK STRATIFICATION] Calling {DEFAULT_MODEL}...")
+        logger.info(f"[RISK STRATIFICATION] Calling {DEFAULT_MODEL}...")
         response_text = call_groq_structured(system_msg, user_msg, temp=0.1)
-        
-        print(f"[RISK STRATIFICATION] Response (first 400 chars): {response_text[:400]}")
-        
+
+        logger.info(f"[RISK STRATIFICATION] Response (first 400 chars): {response_text[:400]}")
+
         result = parse_and_validate(response_text, RiskStratificationOutput)
         state["risk_stratification_result"] = result
-        
-        print(f"[RISK STRATIFICATION] ✓ Risk: {result['risk_level']} ({result['risk_score']}/100), Urgency: {result['referral_urgency']}")
-        
+
+        logger.info(f"[RISK STRATIFICATION] [OK] Risk: {result['risk_level']} ({result['risk_score']}/100), Urgency: {result['referral_urgency']}")
+
     except Exception as e:
         import traceback
-        print(f"[RISK STRATIFICATION] ❌ Error: {e}")
-        print(traceback.format_exc())
+        logger.error(f"[RISK STRATIFICATION] [X] Error: {e}")
+        logger.error(traceback.format_exc())
         
         # ENHANCED FALLBACK with proper scoring
         risk_score = 0
@@ -338,7 +341,7 @@ Return this EXACT JSON structure:
 
 def symptom_reasoning_node(state: ArogyaMaaState) -> ArogyaMaaState:
     """Symptom pattern recognition and cluster analysis"""
-    print("\n[SYMPTOM REASONING] Analyzing symptom patterns...")
+    logger.info("\n[SYMPTOM REASONING] Analyzing symptom patterns...")
     
     symptoms = state.get("symptoms", [])
     gestational_week = state.get("gestational_week", 0)
@@ -394,9 +397,9 @@ Return JSON:
         response_text = call_groq_structured(system_msg, user_msg, temp=0.2)
         result = parse_and_validate(response_text, SymptomReasoningOutput)
         state["symptom_reasoning_result"] = result
-        print(f"[SYMPTOM REASONING] ✓ Clusters: {len(result['symptom_clusters_detected'])}, Urgency: {result['urgency_assessment']}")
+        logger.info(f"[SYMPTOM REASONING] [OK] Clusters: {len(result['symptom_clusters_detected'])}, Urgency: {result['urgency_assessment']}")
     except Exception as e:
-        print(f"[SYMPTOM REASONING] ❌ {e}")
+        logger.error(f"[SYMPTOM REASONING] [X] {e}")
         state["symptom_reasoning_result"] = {
             "agent": "symptom_reasoning",
             "symptom_clusters_detected": [f"Multiple symptoms: {symptoms_text}"],
@@ -415,7 +418,7 @@ Return JSON:
 
 def trend_analysis_node(state: ArogyaMaaState) -> ArogyaMaaState:
     """Longitudinal trend analysis"""
-    print("\n[TREND ANALYSIS] Analyzing health trends...")
+    logger.info("\n[TREND ANALYSIS] Analyzing health trends...")
     
     previous_assessments = state.get("previous_assessments", [])
     current_vitals = state.get("vitals", {})
@@ -477,9 +480,9 @@ Return JSON:
         response_text = call_groq_structured(system_msg, user_msg, temp=0.2)
         result = parse_and_validate(response_text, TrendAnalysisOutput)
         state["trend_analysis_result"] = result
-        print(f"[TREND ANALYSIS] ✓ Direction: {result['trend_direction']}, Changes: {len(result['key_changes'])}")
+        logger.info(f"[TREND ANALYSIS] [OK] Direction: {result['trend_direction']}, Changes: {len(result['key_changes'])}")
     except Exception as e:
-        print(f"[TREND ANALYSIS] ❌ {e}")
+        logger.error(f"[TREND ANALYSIS] [X] {e}")
         state["trend_analysis_result"] = {
             "agent": "trend_analysis",
             "trend_direction": "stable",
@@ -497,7 +500,7 @@ Return JSON:
 
 def nutrition_lifestyle_node(state: ArogyaMaaState) -> ArogyaMaaState:
     """Personalized nutrition and lifestyle recommendations"""
-    print("\n[NUTRITION & LIFESTYLE] Generating recommendations...")
+    logger.info("\n[NUTRITION & LIFESTYLE] Generating recommendations...")
     
     vitals = state.get("vitals", {})
     gestational_week = state.get("gestational_week", 0)
@@ -539,9 +542,9 @@ Return JSON:
         response_text = call_groq_structured(system_msg, user_msg, temp=0.3)
         result = parse_and_validate(response_text, NutritionLifestyleOutput)
         state["nutrition_lifestyle_result"] = result
-        print(f"[NUTRITION & LIFESTYLE] ✓ {len(result['dietary_recommendations'])} dietary, {len(result['lifestyle_modifications'])} lifestyle recs")
+        logger.info(f"[NUTRITION & LIFESTYLE] [OK] {len(result['dietary_recommendations'])} dietary, {len(result['lifestyle_modifications'])} lifestyle recs")
     except Exception as e:
-        print(f"[NUTRITION & LIFESTYLE] ❌ {e}")
+        logger.error(f"[NUTRITION & LIFESTYLE] [X] {e}")
         state["nutrition_lifestyle_result"] = {
             "agent": "nutrition_lifestyle",
             "dietary_recommendations": ["Balanced diet with fruits, vegetables, whole grains", "Iron-rich foods: spinach, beans, jaggery", "Adequate protein: dal, eggs, milk", "Hydration: 8-10 glasses water daily"],
@@ -559,7 +562,7 @@ Return JSON:
 
 def communication_node(state: ArogyaMaaState) -> ArogyaMaaState:
     """Generate tailored messages for different stakeholders"""
-    print("\n[COMMUNICATION] Generating stakeholder messages...")
+    logger.info("\n[COMMUNICATION] Generating stakeholder messages...")
     
     risk_result = state.get("risk_stratification_result", {})
     risk_level = risk_result.get("risk_level", "UNKNOWN")
@@ -598,9 +601,9 @@ Return JSON:
         response_text = call_groq_structured(system_msg, user_msg, temp=0.4)
         result = parse_and_validate(response_text, CommunicationOutput)
         state["communication_result"] = result
-        print(f"[COMMUNICATION] ✓ Messages generated for all stakeholders")
+        logger.info(f"[COMMUNICATION] [OK] Messages generated for all stakeholders")
     except Exception as e:
-        print(f"[COMMUNICATION] ❌ {e}")
+        logger.error(f"[COMMUNICATION] [X] {e}")
         
         if risk_level in ["HIGH", "CRITICAL"]:
             mother_msg = f"Your health checkup at {gestational_week} weeks shows some concerns that need doctor's attention soon. Your risk level is {risk_level} with a score of {risk_score}/100. Please follow the care plan given by your health worker and contact your doctor immediately if you feel unwell. This is important for your baby's health."
@@ -628,7 +631,7 @@ Return JSON:
 
 def document_analysis_node(state: ArogyaMaaState) -> ArogyaMaaState:
     """Document analysis agent - placeholder for future implementation"""
-    print("\n[DOCUMENT ANALYSIS] Processing documents...")
+    logger.info("\n[DOCUMENT ANALYSIS] Processing documents...")
     
     state["document_analysis_result"] = {
         "agent": "document_analysis",
@@ -651,7 +654,7 @@ def finalize_node(state: ArogyaMaaState) -> ArogyaMaaState:
     This is the last node in the workflow that combines all agent outputs
     into a coherent assessment result.
     """
-    print("\n[FINALIZE] Aggregating all agent results...")
+    logger.info("\n[FINALIZE] Aggregating all agent results...")
     
     # Collect all agent results
     results = {
@@ -666,7 +669,7 @@ def finalize_node(state: ArogyaMaaState) -> ArogyaMaaState:
     # Store aggregated results
     state["final_results"] = results
     state["workflow_complete"] = True
-    state["completed_at"] = datetime.utcnow().isoformat()
+    state["completed_at"] = datetime.now(timezone.utc).isoformat()
     
     # Extract key information for easy access
     risk_result = results.get("risk_stratification", {})
@@ -674,7 +677,7 @@ def finalize_node(state: ArogyaMaaState) -> ArogyaMaaState:
     state["final_risk_score"] = risk_result.get("risk_score", 0)
     state["final_confidence"] = risk_result.get("confidence", 0.0)
     
-    print(f"[FINALIZE] ✓ Workflow complete: Risk={state['final_risk_level']} ({state['final_risk_score']}/100)")
+    logger.info(f"[FINALIZE] [OK] Workflow complete: Risk={state['final_risk_level']} ({state['final_risk_score']}/100)")
     
     return state
 

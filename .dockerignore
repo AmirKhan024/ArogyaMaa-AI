@@ -1,0 +1,24 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.log
+node_modules/
+# Local RAG/vector store and scratch data (rebuilt at runtime)
+chroma/
+*.sqlite3
+data/chroma/
+.DS_Store
+Thumbs.db
+docs/
+tests/

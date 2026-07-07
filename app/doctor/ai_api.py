@@ -6,7 +6,7 @@ REST API endpoints for Doctor Portal AI Assistant integration.
 
 from flask import Blueprint, request, jsonify
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.repositories import mothers_repo, assessments_repo
 from app.doctor.ai_assistant import get_doctor_assistant, DoctorAIAssistant
@@ -80,7 +80,7 @@ def analyze_case():
         return jsonify({
             "status": "success",
             "analysis": analysis,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }), 200
         
     except Exception as e:
@@ -118,7 +118,7 @@ def analyze_case_by_id(mother_id):
             "status": "success",
             "mother_id": mother_id,
             "analysis": analysis,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }), 200
         
     except Exception as e:
@@ -173,7 +173,7 @@ def chat_about_case(mother_id):
         return jsonify({
             "status": "success",
             "response": response,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }), 200
         
     except Exception as e:
@@ -296,7 +296,7 @@ def _build_case_from_db(mother_id: str) -> dict:
         # Build complete historical record from ALL assessments
         for assessment in all_assessments:
             vitals = assessment.get("vitals", {})
-            timestamp = assessment.get("timestamp") or assessment.get("created_at") or datetime.utcnow()
+            timestamp = assessment.get("timestamp") or assessment.get("created_at") or datetime.now(timezone.utc)
             
             # Historical vitals for trend analysis
             case_data["historical_vitals"].append({

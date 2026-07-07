@@ -11,7 +11,7 @@ from flask import current_app
 from app.repositories import mothers_repo, messages_repo, assessments_repo, consultations_repo, registration_repo
 from app.services import telegram_service
 from app.ai.nutrition_advisor import is_nutrition_query, generate_nutrition_recommendation
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 # ==================== AI REGISTRATION SETUP ====================
@@ -441,7 +441,7 @@ Use /start to return to the main menu.
     
     for assessment in high_risk_assessments[:3]:  # Show max 3 recent alerts
         risk_category = assessment.get('ai_evaluation', {}).get('risk_category', 'UNKNOWN')
-        created_at = assessment.get('created_at', datetime.utcnow())
+        created_at = assessment.get('created_at', datetime.now(timezone.utc))
         date_str = created_at.strftime('%b %d, %Y') if isinstance(created_at, datetime) else 'Recent'
         
         risk_emoji = {'HIGH': '🟠', 'CRITICAL': '🔴'}.get(risk_category, '⚪')
@@ -508,7 +508,7 @@ Use /start to return to the main menu.
     
     doctor_name = last_message.get('sender_name', 'Doctor')
     message_text = last_message.get('message_text', 'No message content')
-    created_at = last_message.get('created_at', datetime.utcnow())
+    created_at = last_message.get('created_at', datetime.now(timezone.utc))
     date_str = created_at.strftime('%b %d, %Y at %I:%M %p') if isinstance(created_at, datetime) else 'Recently'
     
     message = f"""
@@ -550,7 +550,7 @@ def handle_document_upload(chat_id, document_or_photo):
     """
     import os
     from werkzeug.utils import secure_filename
-    from datetime import datetime
+    from datetime import datetime, timezone
     from app.repositories import documents_repo
     
     mother = mothers_repo.get_by_telegram_chat_id(chat_id)
@@ -568,12 +568,12 @@ def handle_document_upload(chat_id, document_or_photo):
             # Photo - get largest size
             file_obj = max(document_or_photo, key=lambda x: x.get('file_size', 0))
             file_id = file_obj.get('file_id')
-            filename = f"telegram_photo_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.jpg"
+            filename = f"telegram_photo_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.jpg"
             file_type = 'image/jpeg'
         else:
             # Document
             file_id = document_or_photo.get('file_id')
-            filename = document_or_photo.get('file_name', f"telegram_doc_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}")
+            filename = document_or_photo.get('file_name', f"telegram_doc_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}")
             file_type = document_or_photo.get('mime_type', 'application/octet-stream')
         
         if not file_id:
@@ -618,7 +618,7 @@ def handle_document_upload(chat_id, document_or_photo):
                 'file_type': file_type
             },
             'visible_to': ['mother', 'asha', 'doctor', 'admin'],
-            'uploaded_at': datetime.utcnow()
+            'uploaded_at': datetime.now(timezone.utc)
         }
         
         document_id = documents_repo.create(document_data)

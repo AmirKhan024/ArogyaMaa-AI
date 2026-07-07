@@ -7,9 +7,12 @@ Extracts key findings, abnormal values, and provides clinical insights.
 
 import os
 import base64
+import logging
 from groq import Groq
 from typing import Dict, Optional
 import json
+
+logger = logging.getLogger(__name__)
 
 
 def analyze_medical_document(image_path: str, document_type: str, description: str = "") -> Dict:
@@ -49,9 +52,9 @@ def analyze_medical_document(image_path: str, document_type: str, description: s
             from PIL import Image
             img = Image.open(image_path)
             extracted_text = pytesseract.image_to_string(img)
-            print(f"[DOCUMENT ANALYZER] OCR extracted {len(extracted_text)} characters")
+            logger.info(f"[DOCUMENT ANALYZER] OCR extracted {len(extracted_text)} characters")
         except Exception as ocr_error:
-            print(f"[DOCUMENT ANALYZER] OCR failed, will use AI-only analysis: {ocr_error}")
+            logger.error(f"[DOCUMENT ANALYZER] OCR failed, will use AI-only analysis: {ocr_error}")
             # If OCR fails, create a sample analysis template
             extracted_text = f"""Unable to extract text from image (OCR not available).
 
@@ -155,7 +158,7 @@ Return ONLY a valid JSON object:
         
         # Parse response
         result_text = response.choices[0].message.content
-        print(f"[DOCUMENT ANALYZER] AI Response: {result_text[:500]}")  # Debug output
+        logger.info(f"[DOCUMENT ANALYZER] AI Response: {result_text[:500]}")  # Debug output
         
         # Try to extract JSON from response
         try:
@@ -166,9 +169,9 @@ Return ONLY a valid JSON object:
             if start_idx != -1 and end_idx > start_idx:
                 json_str = result_text[start_idx:end_idx]
                 analysis = json.loads(json_str)
-                print(f"[DOCUMENT ANALYZER] Parsed JSON successfully: {len(analysis.get('key_findings', []))} findings")
+                logger.info(f"[DOCUMENT ANALYZER] Parsed JSON successfully: {len(analysis.get('key_findings', []))} findings")
             else:
-                print(f"[DOCUMENT ANALYZER] No JSON found in response, using fallback")
+                logger.warning(f"[DOCUMENT ANALYZER] No JSON found in response, using fallback")
                 # Fallback: create structured response from text
                 analysis = {
                     "key_findings": [result_text[:200]],
@@ -195,7 +198,7 @@ Return ONLY a valid JSON object:
         return analysis
     
     except Exception as e:
-        print(f"[DOCUMENT ANALYZER] Error: {e}")
+        logger.error(f"[DOCUMENT ANALYZER] Error: {e}")
         return {
             "error": str(e),
             "key_findings": [],

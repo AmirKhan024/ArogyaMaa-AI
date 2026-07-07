@@ -4,7 +4,7 @@ Simple AI Evaluation Fallback
 When langgraph is not available, use rule-based risk scoring.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def calculate_risk_score_fallback(vital_signs, symptoms):
@@ -167,7 +167,7 @@ def build_fallback_ai_evaluation(assessment, mother, historical):
         },
         "recommended_actions": risk_data['recommended_actions'],
         "requires_doctor_review": risk_data['risk_score'] >= 50,
-        "evaluated_at": datetime.utcnow(),
+        "evaluated_at": datetime.now(timezone.utc),
         "evaluation_method": "rule_based_fallback"
     }
     

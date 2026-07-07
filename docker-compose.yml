@@ -1,0 +1,38 @@
+# ArogyaMaa-AI — two processes off one image, sharing the same .env.
+# The operational database is Supabase (Postgres, cloud), so no DB container is needed.
+# Populate .env first (SECRET_KEY, DATABASE_URL, GROQ_API_KEY, TELEGRAM_BOT_TOKEN,
+# INTERNAL_API_TOKEN); see .env.example.
+services:
+  web:
+    build: .
+    command: python run.py
+    env_file: .env
+    ports:
+      - "8000:8000"          # Flask web (ASHA / doctor / admin dashboards + API)
+    restart: unless-stopped
+
+  bot:
+    build: .
+    command: python run_telegram_bot.py
+    env_file: .env
+    ports:
+      - "5050:5050"          # appointment webhook served by the bot process
+    restart: unless-stopped
+
+  # ── Optional: local Postgres for offline development ──────────────────────────
+  # The app targets Supabase in normal use. Uncomment this only to run fully offline,
+  # then point DATABASE_URL at it, e.g.:
+  #   DATABASE_URL=postgresql+psycopg://postgres:postgres@db:5432/arogyamaa
+  # and apply db/schema.sql + db/seed.py once against it.
+  # db:
+  #   image: postgres:16
+  #   environment:
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: postgres
+  #     POSTGRES_DB: arogyamaa
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - pgdata:/var/lib/postgresql/data
+# volumes:
+#   pgdata:

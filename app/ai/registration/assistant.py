@@ -5,9 +5,12 @@ Groq LLM wrapper used by the RegistrationEngine for data extraction
 and empathetic question generation.
 """
 
+import logging
 import os
 
 from groq import Groq
+
+logger = logging.getLogger(__name__)
 
 
 class AIAssistant:
@@ -29,5 +32,5 @@ class AIAssistant:
             )
             return response.choices[0].message.content
         except Exception as e:
-            print(f"Groq API Error: {e}")
+            logger.error(f"Groq API Error: {e}")
             return "AI feature disabled due to missing GROQ Key."

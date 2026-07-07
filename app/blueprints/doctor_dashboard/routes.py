@@ -4,10 +4,14 @@ Doctor Dashboard Routes
 Web interface for doctors to review assessments and consultations.
 """
 
+import logging
+
 from flask import render_template, request, session
 from . import doctor_dashboard_bp
 from app.repositories import doctors_repo
 from app.blueprints.shared_logic import get_clinical_portfolio_context
+
+logger = logging.getLogger(__name__)
 
 
 @doctor_dashboard_bp.route('/')
@@ -163,7 +167,7 @@ def ai_assistant():
                     'risk_level': risk_level
                 })
     except Exception as e:
-        print(f"Error fetching mothers: {e}")
+        logger.error(f"Error fetching mothers: {e}")
     
     return render_template('doctor/ai_assistant.html', doctor_id=doctor_id, doctor_name=doctor_name, mothers=mothers)
 

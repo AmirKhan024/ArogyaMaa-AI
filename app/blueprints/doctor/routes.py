@@ -8,7 +8,7 @@ URL Prefix: /doctor
 """
 
 from flask import Blueprint, request, jsonify, current_app
-from datetime import datetime
+from datetime import datetime, timezone
 from app.repositories import (
     mothers_repo, 
     doctors_repo, 
@@ -673,7 +673,7 @@ If you have questions, contact your ASHA worker.
             "delivery_error": telegram_error,
             "mother_id": str(mother_id),
             "mother_name": mother.get('name'),
-            "sent_at": datetime.utcnow().isoformat()
+            "sent_at": datetime.now(timezone.utc).isoformat()
         }), 200 if telegram_sent else 207  # 207 = Multi-Status (partial success)
     
     except Exception as e:
@@ -739,7 +739,7 @@ def review_document():
         
         # Create doctor review record
         review_data = {
-            "reviewed_at": datetime.utcnow(),
+            "reviewed_at": datetime.now(timezone.utc),
             "reviewed_by_doctor_id": str(doctor_id),
             "doctor_name": doctor.get('name'),
             "notes": notes,
