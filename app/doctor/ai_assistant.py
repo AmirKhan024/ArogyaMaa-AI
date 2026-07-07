@@ -74,7 +74,7 @@ class DoctorAIAssistant:
             raise ValueError("GROQ_API_KEY required for Doctor AI Assistant")
         
         self.llm_client = Groq(api_key=groq_api_key)
-        self.model = "llama-3.1-8b-instant"
+        self.model = os.getenv("LLM_MODEL_FAST", "llama-3.1-8b-instant")
         
         logger.info("✓ Doctor AI Assistant initialized")
     

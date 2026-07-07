@@ -4,32 +4,32 @@ Authentication Blueprint
 Handles login/logout and session-based security for the web dashboards.
 Uses Flask session to track authenticated users by role.
 
-Mock credentials (evaluator mode):
-  - admin / admin123  → Admin dashboard
-  - doctor / pass123  → Doctor dashboard (first doctor from DB)
-  - asha / pass123    → ASHA dashboard (first ASHA from DB)
+Credentials are verified against bcrypt password hashes stored in Postgres
+(seed demo users with db/seed.py). An optional static "evaluator" admin login is
+available ONLY in development, using ADMIN_USERNAME / ADMIN_PASSWORD from the env.
 """
 
+import logging
 from functools import wraps
-from flask import Blueprint, render_template, request, redirect, url_for, session, flash
+
+from flask import (
+    Blueprint, render_template, request, redirect, url_for, session,
+    current_app, jsonify,
+)
+
+from app.repositories import asha_repo, doctors_repo
+from app.security import verify_password
+
+logger = logging.getLogger(__name__)
 
 auth_bp = Blueprint('auth', __name__)
-
-# ── Mock credentials ──────────────────────────────────────────────────────────
-# In production, replace with proper user table + hashed passwords
-MOCK_USERS = {
-    'admin':  {'password': 'admin123', 'role': 'admin'},
-    'doctor': {'password': 'pass123',  'role': 'doctor'},
-    'asha':   {'password': 'pass123',  'role': 'asha'},
-}
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @auth_bp.route('/', methods=['GET', 'POST'])
 def login():
-    """Landing page with login form. POST validates credentials."""
-    # If already logged in, redirect to appropriate dashboard
+    """Landing page with login form. POST validates credentials against the DB."""
     if session.get('logged_in'):
         return _redirect_by_role(session.get('role'))
 
@@ -38,42 +38,23 @@ def login():
         raw_username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
 
-        # 1. Check Mock Users (Admin/Static fallback)
-        username_lower = raw_username.lower()
-        user = MOCK_USERS.get(username_lower)
-        if user and user['password'] == password:
+        # 1. Optional dev-only evaluator admin (no admins table in this prototype).
+        if _try_dev_admin(raw_username, password):
+            return _redirect_by_role('admin')
+
+        # 2. Doctor (DB, bcrypt-verified)
+        doctor = doctors_repo.get_by_username(raw_username)
+        if doctor and doctor.get('active', True) and verify_password(password, doctor.get('password_hash')):
             session['logged_in'] = True
-            session['username'] = username_lower
-            session['role'] = user['role']
-            _resolve_user_id(user['role'])
-            return _redirect_by_role(user['role'])
-        
-        # 2. Check Database for Doctors
-        # Case insensitive regex match for username to prevent capitalization errors
-        import re
-        username_regex = re.compile(f'^{re.escape(raw_username)}$', re.IGNORECASE)
-        
-        from app.db import get_collection
-        doctor = get_collection('doctors').find_one({
-            'username': username_regex,
-            'password': password,
-            'active': True
-        })
-        if doctor:
-            session['logged_in'] = True
-            session['username'] = doctor.get('username', raw_username) # Store actual casing
+            session['username'] = doctor.get('username', raw_username)
             session['role'] = 'doctor'
             session['doctor_id'] = str(doctor['_id'])
             session['display_name'] = doctor.get('name', 'Doctor')
             return _redirect_by_role('doctor')
-            
-        # 3. Check Database for ASHA Workers
-        asha = get_collection('asha_workers').find_one({
-            'username': username_regex,
-            'password': password,
-            'active': True
-        })
-        if asha:
+
+        # 3. ASHA worker (DB, bcrypt-verified)
+        asha = asha_repo.get_by_username(raw_username)
+        if asha and asha.get('active', True) and verify_password(password, asha.get('password_hash')):
             session['logged_in'] = True
             session['username'] = asha.get('username', raw_username)
             session['role'] = 'asha'
@@ -81,7 +62,6 @@ def login():
             session['display_name'] = asha.get('name', 'ASHA Worker')
             return _redirect_by_role('asha')
 
-        # Invalid credentials
         error = 'Invalid username or password'
 
     return render_template('index.html', error=error)
@@ -96,25 +76,25 @@ def logout():
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _resolve_user_id(role):
-    """Look up the first doctor/asha from MongoDB and store their ID in session."""
-    try:
-        if role == 'doctor':
-            from app.repositories import doctors_repo
-            doctors = doctors_repo.list_all()
-            if doctors:
-                session['doctor_id'] = str(doctors[0]['_id'])
-                session['display_name'] = doctors[0].get('name', 'Doctor')
-        elif role == 'asha':
-            from app.repositories import asha_repo
-            workers = asha_repo.list_all()
-            if workers:
-                session['asha_id'] = str(workers[0]['_id'])
-                session['display_name'] = workers[0].get('name', 'ASHA Worker')
-        elif role == 'admin':
-            session['display_name'] = 'Administrator'
-    except Exception:
-        pass
+def _try_dev_admin(username, password):
+    """
+    Development-only static admin login. Returns True (and sets the session) when
+    APP_ENV == 'development' and the env-configured admin credentials match.
+    Never active in production; no hardcoded password.
+    """
+    if str(current_app.config.get('APP_ENV', 'development')).lower() != 'development':
+        return False
+    admin_user = current_app.config.get('ADMIN_USERNAME') or 'admin'
+    admin_pass = current_app.config.get('ADMIN_PASSWORD')  # set in .env for dev demos
+    if not admin_pass:
+        return False
+    if username.lower() == str(admin_user).lower() and password == admin_pass:
+        session['logged_in'] = True
+        session['username'] = admin_user
+        session['role'] = 'admin'
+        session['display_name'] = 'Administrator'
+        return True
+    return False
 
 
 def _redirect_by_role(role):
@@ -133,7 +113,7 @@ def _redirect_by_role(role):
 # ── Decorators for route protection ──────────────────────────────────────────
 
 def login_required(f):
-    """Decorator: redirects to login if not authenticated."""
+    """Decorator: redirects to login if not authenticated (HTML routes)."""
     @wraps(f)
     def decorated(*args, **kwargs):
         if not session.get('logged_in'):
@@ -143,7 +123,7 @@ def login_required(f):
 
 
 def role_required(role):
-    """Decorator factory: requires a specific role."""
+    """Decorator factory: requires a specific role (HTML routes)."""
     def decorator(f):
         @wraps(f)
         def decorated(*args, **kwargs):
@@ -154,3 +134,23 @@ def role_required(role):
             return f(*args, **kwargs)
         return decorated
     return decorator
+
+
+def api_login_required(f):
+    """
+    Decorator for JSON API routes returning/mutating patient data.
+
+    Allows either a logged-in session OR a server-to-server call carrying the
+    X-Internal-Token header equal to INTERNAL_API_TOKEN (used by the Telegram bot).
+    Returns 401 JSON otherwise.
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if session.get('logged_in'):
+            return f(*args, **kwargs)
+        token = request.headers.get('X-Internal-Token')
+        internal = current_app.config.get('INTERNAL_API_TOKEN')
+        if token and internal and token == internal:
+            return f(*args, **kwargs)
+        return jsonify({"error": "unauthorized"}), 401
+    return decorated

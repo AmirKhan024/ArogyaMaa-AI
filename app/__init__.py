@@ -5,6 +5,8 @@ This module implements the Flask app factory pattern.
 It creates and configures the Flask application with all necessary blueprints.
 """
 
+import logging
+
 from flask import Flask
 from app.config import get_config
 from app.db import init_db
@@ -26,16 +28,25 @@ def create_app(config_name='development'):
         Configured Flask application instance
     """
     app = Flask(__name__)
-    
+
+    # Root logging configuration (idempotent across factory calls).
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    )
+
     # Load configuration from config.py (which reads .env)
     config = get_config(config_name)
     app.config.from_object(config)
-    
-    # Ensure SECRET_KEY is set for sessions
+
+    # SECRET_KEY is REQUIRED — fail fast rather than silently inventing one.
     if not app.config.get('SECRET_KEY'):
-        app.config['SECRET_KEY'] = 'ArogyaMaa-dev-secret-key-change-in-prod'
-    
-    # Initialize MongoDB connection (singleton)
+        raise RuntimeError(
+            "SECRET_KEY is not set. Add it to .env "
+            "(generate: python -c \"import secrets;print(secrets.token_hex(32))\")."
+        )
+
+    # Initialize the database connection (Supabase / Postgres)
     with app.app_context():
         init_db(app)
     
@@ -121,12 +132,15 @@ def register_error_handlers(app):
 
 def register_route_protection(app):
     """
-    Protect dashboard routes with session-based auth.
-    API routes (/admin/analytics, /asha/mothers, etc.) are left open for now
-    because the Telegram bot and AJAX calls depend on them.
-    Only the HTML dashboard routes require login.
+    Session-based auth enforced centrally in a single before_request hook:
+
+    1. HTML dashboard routes → redirect to login (and role-check) if not authenticated.
+    2. JSON API routes that read/mutate patient data → 401 unless there is a logged-in
+       session OR a valid X-Internal-Token (server-to-server, e.g. the Telegram bot).
+
+    Health checks and the auth/login routes stay public.
     """
-    from flask import session, redirect, url_for, request as flask_request
+    from flask import session, redirect, url_for, jsonify, request as flask_request
 
     PROTECTED_PREFIXES = [
         '/admin/dashboard',
@@ -141,23 +155,36 @@ def register_route_protection(app):
         '/doctor/dashboard': 'doctor',
     }
 
+    # JSON API prefixes that must not be world-readable.
+    API_PROTECTED_PREFIXES = ('/admin', '/asha', '/doctor', '/api', '/ai')
+
+    def _api_authorized():
+        if session.get('logged_in'):
+            return True
+        token = flask_request.headers.get('X-Internal-Token')
+        internal = app.config.get('INTERNAL_API_TOKEN')
+        return bool(token and internal and token == internal)
+
     @app.before_request
-    def check_dashboard_auth():
+    def check_auth():
         path = flask_request.path
 
-        # Only protect dashboard HTML routes
+        # 1. Dashboard HTML routes → redirect + role check
         for prefix in PROTECTED_PREFIXES:
             if path.startswith(prefix):
                 if not session.get('logged_in'):
                     return redirect(url_for('auth.login'))
-                # Check role matches the dashboard being accessed
-                # Shared dashboard allows both asha and doctor
                 required_role = ROLE_MAP.get(prefix)
                 user_role = session.get('role')
-                
                 if prefix == '/dashboard/shared':
                     if user_role not in ['asha', 'doctor']:
                         return redirect(url_for('auth.login'))
                 elif required_role and user_role != required_role:
                     return redirect(url_for('auth.login'))
-                break
+                return None  # dashboard auth handled
+
+        # 2. JSON API routes → 401 unless session or internal token
+        if path.startswith(API_PROTECTED_PREFIXES) and not path.endswith('/health'):
+            if not _api_authorized():
+                return jsonify({"error": "unauthorized"}), 401
+        return None

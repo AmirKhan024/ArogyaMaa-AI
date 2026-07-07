@@ -1,359 +1,223 @@
 """
 Messages Repository
 
-Data access layer for the 'messages' collection.
-Stores unified chat history (Telegram + system messages).
+The old MongoDB 'messages' collection held two distinct shapes, so it is split across
+two Postgres tables:
+  * message_threads  — per-mother chat history (embedded ``messages`` JSONB array)
+  * notifications    — standalone alerts addressed to an ASHA worker or doctor
+
+Public function names, signatures, and return shapes are preserved. Timestamps inside
+the JSONB messages array are ISO strings (JSONB cannot hold native datetimes).
 """
 
-from bson import ObjectId
-from datetime import datetime
-from app.db import get_collection
+import uuid
+
+from app.repositories._sql import (
+    fetch_all, fetch_one, insert_row, exec_write, utcnow,
+)
+
+# ── Standalone notifications ───────────────────────────────────────────────────
+
+_NOTIF_KNOWN = {
+    "mother_id", "mother_name", "telegram_chat_id", "to_asha_id", "to_doctor_id",
+    "message_type", "content", "message", "subject", "read", "from_doctor",
+    "doctor_name", "document_id", "timestamp",
+}
+_NOTIF_UUID = {"mother_id", "to_asha_id", "to_doctor_id", "document_id"}
 
 
 def create(message_data):
-    """
-    Create a single standalone message.
-    
-    Args:
-        message_data: Dictionary with message fields
-    
-    Returns:
-        ObjectId of created message
-    """
-    messages = get_collection('messages')
-    
-    # Ensure timestamps
-    if 'timestamp' not in message_data:
-        message_data['timestamp'] = datetime.utcnow()
-    
-    result = messages.insert_one(message_data)
-    return result.inserted_id
+    """Create a single standalone notification message. Returns the new id (str)."""
+    message_data.setdefault("timestamp", utcnow())
+    return insert_row(
+        "notifications", message_data, known_cols=_NOTIF_KNOWN, uuid_cols=_NOTIF_UUID
+    )
 
+
+def list_by_recipient(recipient_id, recipient_type="asha", limit=None):
+    """Get notifications sent to a specific ASHA worker or doctor (most recent first)."""
+    col = {"asha": "to_asha_id", "doctor": "to_doctor_id"}.get(recipient_type)
+    if not col:
+        return []
+    lc = " limit :lim" if limit else ""
+    params = {"rid": str(recipient_id)}
+    if limit:
+        params["lim"] = int(limit)
+    return fetch_all(
+        f"select * from notifications where {col} = cast(:rid as uuid) "
+        f"order by timestamp desc" + lc,
+        params,
+    )
+
+
+def list_notifications_for_mother(mother_id, limit=None, exclude_from_mother=False):
+    """List notifications addressed to / about a mother (most recent first)."""
+    where = "mother_id = cast(:mid as uuid)"
+    if exclude_from_mother:
+        where += " and (message_type is distinct from 'from_mother')"
+    lc = " limit :lim" if limit else ""
+    params = {"mid": str(mother_id)}
+    if limit:
+        params["lim"] = int(limit)
+    return fetch_all(
+        f"select * from notifications where {where} order by timestamp desc" + lc, params
+    )
+
+
+def mark_notification_read(notification_id):
+    """Mark a single notification as read. Returns True if a row changed."""
+    return exec_write(
+        "update notifications set read = true where id = cast(:id as uuid)",
+        {"id": str(notification_id)},
+    ) > 0
+
+
+def mark_all_notifications_read(asha_id):
+    """Mark all of an ASHA worker's notifications as read. Returns count updated."""
+    return exec_write(
+        "update notifications set read = true "
+        "where to_asha_id = cast(:aid as uuid) and read is not true",
+        {"aid": str(asha_id)},
+    )
+
+
+# ── Per-mother message threads ─────────────────────────────────────────────────
 
 def create_thread(mother_id):
-    """
-    Create a new message thread for a mother.
-    
-    Args:
-        mother_id: ObjectId or string representation
-    
-    Returns:
-        ObjectId of the created message thread
-    """
-    messages = get_collection('messages')
-    
-    if isinstance(mother_id, str):
-        mother_id = ObjectId(mother_id)
-    
-    thread_data = {
-        'mother_id': mother_id,
-        'messages': [],
-        'created_at': datetime.utcnow(),
-        'last_message_at': datetime.utcnow(),
-        'total_messages': 0
-    }
-    
-    result = messages.insert_one(thread_data)
-    return result.inserted_id
+    """Create a new (empty) message thread for a mother. Returns the new id (str)."""
+    return insert_row(
+        "message_threads",
+        {
+            "mother_id": str(mother_id),
+            "messages": [],
+            "created_at": utcnow(),
+            "last_message_at": utcnow(),
+            "total_messages": 0,
+        },
+        known_cols={"mother_id", "messages", "created_at", "last_message_at", "total_messages"},
+        jsonb_cols={"messages"},
+        uuid_cols={"mother_id"},
+    )
 
 
 def get_by_mother_id(mother_id):
-    """
-    Get the message thread for a specific mother.
-    
-    Args:
-        mother_id: ObjectId or string representation
-    
-    Returns:
-        Message thread document or None if not found
-    """
-    messages = get_collection('messages')
-    
-    if isinstance(mother_id, str):
-        mother_id = ObjectId(mother_id)
-    
-    return messages.find_one({'mother_id': mother_id})
+    return fetch_one(
+        "select * from message_threads where mother_id = cast(:mid as uuid)",
+        {"mid": str(mother_id)},
+    )
+
+
+def _save_messages(mother_id, messages, *, bump_last=False, total=None):
+    sets = ["messages = cast(:msgs as jsonb)"]
+    params = {"mid": str(mother_id), "msgs": None}
+    from app.db import to_jsonb
+    params["msgs"] = to_jsonb(messages)
+    if bump_last:
+        sets.append("last_message_at = now()")
+    if total is not None:
+        sets.append("total_messages = :total")
+        params["total"] = int(total)
+    sql = f"update message_threads set {', '.join(sets)} where mother_id = cast(:mid as uuid)"
+    return exec_write(sql, params) > 0
 
 
 def add_message(mother_id, message_data):
     """
-    Add a message to a mother's chat thread.
-    
-    Args:
-        mother_id: ObjectId or string representation
-        message_data: Dictionary containing message information
-            Required fields:
-                - sender_type: str ('mother', 'asha', 'doctor', 'ai', 'system')
-                - text: str
-            Optional fields:
-                - sender_id: ObjectId
-                - sender_name: str
-                - telegram_message_id: int
-                - is_alert: bool
-                - alert_type: str
-    
-    Returns:
-        True if added, False if thread not found
+    Append a message to a mother's chat thread. Auto-creates the thread if missing
+    (so messages are never silently dropped). Returns True on success.
     """
-    messages = get_collection('messages')
-    
-    if isinstance(mother_id, str):
-        mother_id = ObjectId(mother_id)
-    
-    # Generate message ID
-    import uuid
-    message_data['message_id'] = f"msg_{uuid.uuid4().hex[:8]}"
-    message_data['timestamp'] = datetime.utcnow()
-    message_data.setdefault('read_by_mother', False)
-    message_data.setdefault('read_at', None)
-    
-    result = messages.update_one(
-        {'mother_id': mother_id},
-        {
-            '$push': {'messages': message_data},
-            '$set': {'last_message_at': datetime.utcnow()},
-            '$inc': {'total_messages': 1}
-        }
+    thread = get_by_mother_id(mother_id)
+    if not thread:
+        create_thread(mother_id)
+        thread = get_by_mother_id(mother_id)
+        if not thread:
+            return False
+
+    message_data = dict(message_data)
+    message_data["message_id"] = f"msg_{uuid.uuid4().hex[:8]}"
+    message_data["timestamp"] = utcnow().isoformat()
+    message_data.setdefault("read_by_mother", False)
+    message_data.setdefault("read_at", None)
+    # Ensure any id fields are JSON-serializable strings
+    if message_data.get("sender_id") is not None:
+        message_data["sender_id"] = str(message_data["sender_id"])
+
+    messages = list(thread.get("messages") or [])
+    messages.append(message_data)
+    return _save_messages(
+        mother_id, messages, bump_last=True, total=(thread.get("total_messages") or 0) + 1
     )
-    
-    return result.modified_count > 0
 
 
 def get_messages(mother_id, limit=None, skip=0):
-    """
-    Get messages from a mother's chat thread.
-    
-    Args:
-        mother_id: ObjectId or string representation
-        limit: Maximum number of messages to return (optional)
-        skip: Number of messages to skip (for pagination)
-    
-    Returns:
-        List of message objects (most recent first)
-    """
-    messages = get_collection('messages')
-    
-    if isinstance(mother_id, str):
-        mother_id = ObjectId(mother_id)
-    
-    # Use aggregation to slice the messages array
-    pipeline = [
-        {'$match': {'mother_id': mother_id}},
-        {'$project': {
-            'messages': {
-                '$reverseArray': '$messages'  # Reverse to get newest first
-            }
-        }}
-    ]
-    
-    if skip > 0:
-        pipeline.append({'$project': {
-            'messages': {'$slice': ['$messages', skip, limit or 1000]}
-        }})
-    elif limit:
-        pipeline.append({'$project': {
-            'messages': {'$slice': ['$messages', limit]}
-        }})
-    
-    result = list(messages.aggregate(pipeline))
-    
-    if result:
-        return result[0].get('messages', [])
-    return []
+    """Return messages (newest first), honoring skip/limit."""
+    thread = get_by_mother_id(mother_id)
+    if not thread:
+        return []
+    messages = list(reversed(thread.get("messages") or []))
+    if skip:
+        messages = messages[skip:]
+    if limit:
+        messages = messages[:limit]
+    return messages
 
 
 def get_by_mother(mother_id, sender_type=None, limit=None):
-    """
-    Get messages for a mother, optionally filtered by sender type.
-    
-    Args:
-        mother_id: ObjectId or string representation
-        sender_type: Optional filter by sender_type ('doctor', 'asha', 'system', etc.)
-        limit: Maximum number of messages to return
-    
-    Returns:
-        List of message objects (most recent first)
-    """
-    if isinstance(mother_id, str):
-        mother_id = ObjectId(mother_id)
-    
-    # Get all messages for this mother
-    all_messages = get_messages(mother_id)
-    
-    # Filter by sender_type if provided
+    messages = get_messages(mother_id)
     if sender_type:
-        filtered_messages = [
-            msg for msg in all_messages 
-            if msg.get('sender_type') == sender_type
-        ]
-    else:
-        filtered_messages = all_messages
-    
-    # Apply limit
+        messages = [m for m in messages if m.get("sender_type") == sender_type]
     if limit:
-        filtered_messages = filtered_messages[:limit]
-    
-    return filtered_messages
+        messages = messages[:limit]
+    return messages
 
 
 def mark_as_read(mother_id, message_id):
-    """
-    Mark a specific message as read by the mother.
-    
-    Args:
-        mother_id: ObjectId or string representation
-        message_id: Message ID (string)
-    
-    Returns:
-        True if marked, False if not found
-    """
-    messages = get_collection('messages')
-    
-    if isinstance(mother_id, str):
-        mother_id = ObjectId(mother_id)
-    
-    result = messages.update_one(
-        {
-            'mother_id': mother_id,
-            'messages.message_id': message_id
-        },
-        {
-            '$set': {
-                'messages.$.read_by_mother': True,
-                'messages.$.read_at': datetime.utcnow()
-            }
-        }
-    )
-    
-    return result.modified_count > 0
+    thread = get_by_mother_id(mother_id)
+    if not thread:
+        return False
+    messages = list(thread.get("messages") or [])
+    changed = False
+    for m in messages:
+        if m.get("message_id") == message_id:
+            m["read_by_mother"] = True
+            m["read_at"] = utcnow().isoformat()
+            changed = True
+    if not changed:
+        return False
+    return _save_messages(mother_id, messages)
 
 
 def mark_all_as_read(mother_id):
-    """
-    Mark all messages as read for a mother.
-    
-    Args:
-        mother_id: ObjectId or string representation
-    
-    Returns:
-        True if updated, False if not found
-    """
-    messages = get_collection('messages')
-    
-    if isinstance(mother_id, str):
-        mother_id = ObjectId(mother_id)
-    
-    # Get all messages
-    thread = messages.find_one({'mother_id': mother_id})
+    thread = get_by_mother_id(mother_id)
     if not thread:
         return False
-    
-    # Update all unread messages
-    updated_messages = []
-    for msg in thread.get('messages', []):
-        if not msg.get('read_by_mother', False):
-            msg['read_by_mother'] = True
-            msg['read_at'] = datetime.utcnow()
-        updated_messages.append(msg)
-    
-    result = messages.update_one(
-        {'mother_id': mother_id},
-        {'$set': {'messages': updated_messages}}
-    )
-    
-    return result.modified_count > 0
+    messages = list(thread.get("messages") or [])
+    for m in messages:
+        if not m.get("read_by_mother", False):
+            m["read_by_mother"] = True
+            m["read_at"] = utcnow().isoformat()
+    return _save_messages(mother_id, messages)
 
 
 def get_unread_count(mother_id):
-    """
-    Get count of unread messages for a mother.
-    
-    Args:
-        mother_id: ObjectId or string representation
-    
-    Returns:
-        Number of unread messages
-    """
-    messages = get_collection('messages')
-    
-    if isinstance(mother_id, str):
-        mother_id = ObjectId(mother_id)
-    
-    thread = messages.find_one({'mother_id': mother_id})
+    thread = get_by_mother_id(mother_id)
     if not thread:
         return 0
-    
-    unread_count = sum(
-        1 for msg in thread.get('messages', [])
-        if not msg.get('read_by_mother', False) and msg.get('sender_type') != 'mother'
+    return sum(
+        1 for m in (thread.get("messages") or [])
+        if not m.get("read_by_mother", False) and m.get("sender_type") != "mother"
     )
-    
-    return unread_count
 
 
 def get_recent_threads(limit=10):
-    """
-    Get most recently active message threads.
-    
-    Args:
-        limit: Maximum number of threads to return
-    
-    Returns:
-        List of message thread documents (most recent first)
-    """
-    messages = get_collection('messages')
-    
-    return list(messages.find().sort('last_message_at', -1).limit(limit))
+    return fetch_all(
+        "select * from message_threads order by last_message_at desc limit :lim",
+        {"lim": int(limit)},
+    )
 
 
 def delete_thread(mother_id):
-    """
-    Delete a message thread (use with caution).
-    
-    Args:
-        mother_id: ObjectId or string representation
-    
-    Returns:
-        True if deleted, False if not found
-    """
-    messages = get_collection('messages')
-    
-    if isinstance(mother_id, str):
-        mother_id = ObjectId(mother_id)
-    
-    result = messages.delete_one({'mother_id': mother_id})
-    
-    return result.deleted_count > 0
-
-
-def list_by_recipient(recipient_id, recipient_type='asha', limit=None):
-    """
-    Get all messages sent to a specific recipient (ASHA worker or doctor).
-    
-    Args:
-        recipient_id: ObjectId or string representation
-        recipient_type: 'asha' or 'doctor'
-        limit: Maximum number of messages (optional)
-    
-    Returns:
-        List of message documents (most recent first)
-    """
-    messages = get_collection('messages')
-    
-    if isinstance(recipient_id, str):
-        recipient_id = ObjectId(recipient_id)
-    
-    # Build query based on recipient type
-    if recipient_type == 'asha':
-        query = {'to_asha_id': recipient_id}
-    elif recipient_type == 'doctor':
-        query = {'to_doctor_id': recipient_id}
-    else:
-        return []
-    
-    cursor = messages.find(query).sort('timestamp', -1)
-    
-    if limit:
-        cursor = cursor.limit(limit)
-    
-    return list(cursor)
+    return exec_write(
+        "delete from message_threads where mother_id = cast(:mid as uuid)",
+        {"mid": str(mother_id)},
+    ) > 0

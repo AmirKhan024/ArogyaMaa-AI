@@ -137,7 +137,7 @@ Return ONLY a valid JSON object:
         
         # Call Groq AI with text-only model (much faster and more reliable)
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",  # Fast, reliable text model
+            model=os.getenv("LLM_MODEL", "openai/gpt-oss-120b"),  # text model (Groq)
             messages=[
                 {
                     "role": "system",

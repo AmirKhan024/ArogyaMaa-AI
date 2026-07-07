@@ -4,7 +4,6 @@ Common data preparation for views used by both Doctors and ASHA workers.
 """
 
 import traceback
-from bson import ObjectId
 from datetime import datetime
 from app.repositories import mothers_repo, assessments_repo
 

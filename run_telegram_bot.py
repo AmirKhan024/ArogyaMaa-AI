@@ -27,9 +27,12 @@ from telegram.ext import (
     filters,
     ContextTypes
 )
-from pymongo import MongoClient
-from bson import ObjectId
 from groq import Groq
+
+from app.db import init_db, get_engine
+from app.repositories import (
+    mothers_repo, messages_repo, assessments_repo, registration_repo,
+)
 
 # Load environment
 load_dotenv()
@@ -43,34 +46,21 @@ logger = logging.getLogger(__name__)
 
 # Configuration
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-MONGO_URI = os.getenv('MONGODB_URI', os.getenv('MONGO_URI', 'mongodb://localhost:27017'))
-DB_NAME = os.getenv('MONGODB_DB_NAME', os.getenv('DB_NAME', 'ArogyaMaa'))
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+FAST_MODEL = os.getenv('LLM_MODEL_FAST', 'llama-3.1-8b-instant')
 # Optional: set HTTPS_PROXY in .env if Telegram is blocked in your region
 # Example: HTTPS_PROXY=http://127.0.0.1:1080 or HTTPS_PROXY=socks5://127.0.0.1:1080
 HTTPS_PROXY = os.getenv('HTTPS_PROXY', os.getenv('https_proxy', ''))
 
-# MongoDB Connection
-mongo_client = None
+# Database Connection (Supabase / Postgres via SQLAlchemy).
+# `db` is a truthy sentinel (the Engine) used throughout for "is the DB available?" checks.
 db = None
-mothers_collection = None
-messages_collection = None
-assessments_collection = None
-registration_sessions = None
-
 try:
-    mongo_client = MongoClient(MONGO_URI)
-    db = mongo_client[DB_NAME]
-    mothers_collection = db['mothers']
-    messages_collection = db['messages']
-    assessments_collection = db['assessments']
-    registration_sessions = db['registration_sessions']
-    # Test connection
-    mongo_client.server_info()
-    logger.info("✅ MongoDB connected successfully")
+    init_db()
+    db = get_engine()
+    logger.info("✅ Postgres connected successfully")
 except Exception as e:
-    logger.error(f"❌ MongoDB connection failed: {e}")
-    mongo_client = None
+    logger.error(f"❌ Database connection failed: {e}")
     db = None
 
 # Groq AI Client
@@ -169,7 +159,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Check if mother already registered
-    existing_mother = mothers_collection.find_one({'telegram_chat_id': str(chat_id)})
+    existing_mother = mothers_repo.get_by_telegram_chat_id(chat_id)
 
     if existing_mother:
         mother_name = existing_mother.get('name', 'there')
@@ -217,7 +207,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'updated_at': datetime.now(timezone.utc)
         }
 
-        mothers_collection.insert_one(mother_data)
+        mothers_repo.create(mother_data)
         logger.info(f"✅ New mother profile created: {full_name} (chat_id: {chat_id})")
 
         welcome_message = (
@@ -244,7 +234,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Database connection error.")
         return
 
-    mother = mothers_collection.find_one({'telegram_chat_id': str(chat_id)})
+    mother = mothers_repo.get_by_telegram_chat_id(chat_id)
 
     if not mother:
         await update.message.reply_text("❌ You are not registered yet.\nUse /start to begin.")
@@ -329,14 +319,12 @@ async def show_health_summary(chat_id, query):
         await query.edit_message_text("❌ Database connection error.")
         return
 
-    mother = mothers_collection.find_one({'telegram_chat_id': str(chat_id)})
+    mother = mothers_repo.get_by_telegram_chat_id(chat_id)
     if not mother:
         await query.edit_message_text("Please use /start first.")
         return
 
-    assessments = list(assessments_collection.find(
-        {'mother_id': mother['_id']}
-    ).sort('timestamp', -1).limit(1))
+    assessments = assessments_repo.list_by_mother(mother['_id'], limit=1)
 
     if not assessments:
         message = (
@@ -426,14 +414,14 @@ async def show_messages(chat_id, query):
         await query.edit_message_text("❌ Database connection error.")
         return
 
-    mother = mothers_collection.find_one({'telegram_chat_id': str(chat_id)})
+    mother = mothers_repo.get_by_telegram_chat_id(chat_id)
     if not mother:
         await query.edit_message_text("Please use /start first.")
         return
 
-    recent_messages = list(messages_collection.find(
-        {'mother_id': mother['_id'], 'message_type': {'$ne': 'from_mother'}}
-    ).sort('timestamp', -1).limit(5))
+    recent_messages = messages_repo.list_notifications_for_mother(
+        mother['_id'], limit=5, exclude_from_mother=True
+    )
 
     if not recent_messages:
         message = (
@@ -480,13 +468,13 @@ async def handle_register_button(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     # Check if already completed full registration
-    mother = mothers_collection.find_one({'telegram_chat_id': str(chat_id)})
-    if mother and mother.get('registration_complete'):
+    mother = mothers_repo.get_by_telegram_chat_id(chat_id)
+    if mother and (mother.get('registration_complete') or (mother.get('extra') or {}).get('registration_complete')):
         await query.message.reply_text("✅ You are already registered! Use /start to access all features.")
         return
 
     # Get or create registration session
-    session = registration_sessions.find_one({"telegram_chat_id": str(chat_id)})
+    session = registration_repo.get_session(chat_id)
     if not session:
         full_name = mother['name'] if mother else (query.from_user.first_name or 'Mother')
         session = {
@@ -494,18 +482,11 @@ async def handle_register_button(update: Update, context: ContextTypes.DEFAULT_T
             "full_name": full_name,
             "registration_active": True,
         }
-        registration_sessions.update_one(
-            {"telegram_chat_id": str(chat_id)},
-            {"$set": session},
-            upsert=True
-        )
+        registration_repo.update_session_data(chat_id, session)
 
     # Ensure registration is marked active
     if not session.get('registration_active'):
-        registration_sessions.update_one(
-            {"telegram_chat_id": str(chat_id)},
-            {"$set": {"registration_active": True}}
-        )
+        registration_repo.update_session_data(chat_id, {"registration_active": True})
         session['registration_active'] = True
 
     # Get first (or next) question from AI engine
@@ -527,7 +508,7 @@ async def handle_register_button(update: Update, context: ContextTypes.DEFAULT_T
 async def handle_registration_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Process text/voice/contact input during active AI registration."""
     chat_id = update.effective_chat.id
-    session = registration_sessions.find_one({"telegram_chat_id": str(chat_id)})
+    session = registration_repo.get_session(chat_id)
 
     if not session or not session.get('registration_active'):
         return False  # Not in registration - let caller handle
@@ -566,13 +547,10 @@ async def handle_registration_input(update: Update, context: ContextTypes.DEFAUL
 
     # Update session data
     if extracted:
-        registration_sessions.update_one(
-            {"telegram_chat_id": str(chat_id)},
-            {"$set": extracted}
-        )
+        registration_repo.update_session_data(chat_id, extracted)
 
     # Refresh session for language detection
-    new_session = registration_sessions.find_one({"telegram_chat_id": str(chat_id)})
+    new_session = registration_repo.get_session(chat_id)
 
     if is_comp:
         # Registration complete
@@ -599,75 +577,8 @@ async def handle_registration_input(update: Update, context: ContextTypes.DEFAUL
 
 
 def _finalize_polling_registration(telegram_chat_id):
-    """Move registration session data into mothers collection (polling mode)."""
-    session = registration_sessions.find_one({"telegram_chat_id": telegram_chat_id})
-    if not session:
-        return False
-
-    update_data = {
-        'registration_complete': True,
-        'registration_source': 'ai_bot',
-        'registration_completed_at': datetime.now(timezone.utc),
-        'updated_at': datetime.now(timezone.utc),
-    }
-
-    # Map session fields to mother schema
-    if session.get('full_name'):
-        update_data['name'] = session['full_name']
-    if session.get('age'):
-        update_data['age'] = session['age']
-    if session.get('phone_number'):
-        update_data['phone'] = session['phone_number']
-    if session.get('location'):
-        update_data['location'] = session['location']
-    if session.get('dob'):
-        update_data['dob'] = session['dob']
-    if session.get('emergency_contact'):
-        update_data['emergency_contact'] = session['emergency_contact']
-    if session.get('preferred_language'):
-        update_data['preferred_language'] = session['preferred_language']
-    if session.get('gestational_week'):
-        update_data['gestational_age'] = session['gestational_week']
-    if session.get('edd_date'):
-        update_data['edd'] = session['edd_date']
-
-    # Pregnancy data
-    pregnancy_data = {}
-    for field in ['gestational_week', 'lmp_date', 'edd_date', 'first_pregnancy',
-                  'previous_pregnancies_count', 'fetal_movement']:
-        if session.get(field):
-            key = 'gestational_age_weeks' if field == 'gestational_week' else (
-                'edd' if field == 'edd_date' else field)
-            pregnancy_data[key] = session[field]
-    if pregnancy_data:
-        update_data['current_pregnancy'] = pregnancy_data
-
-    # Medical history
-    medical_data = {}
-    for field in ['blood_group', 'previous_complications', 'medical_conditions',
-                  'medications_supplements', 'allergies', 'major_surgeries',
-                  'vaccines_received', 'scans_done', 'lab_tests_done']:
-        if session.get(field):
-            key = 'conditions' if field == 'medical_conditions' else field
-            medical_data[key] = session[field]
-    if medical_data:
-        update_data['medical_history'] = medical_data
-
-    # Health status fields
-    for field in ['current_symptoms', 'danger_signs', 'substance_usage', 'doctor_consent']:
-        if session.get(field):
-            update_data[field] = session[field]
-
-    # Update mothers collection
-    mothers_collection.update_one(
-        {"telegram_chat_id": telegram_chat_id},
-        {"$set": update_data},
-        upsert=True
-    )
-
-    # Clean up session
-    registration_sessions.delete_one({"telegram_chat_id": telegram_chat_id})
-    return True
+    """Move registration session data into the mothers table (delegates to the repo)."""
+    return registration_repo.finalize_registration(telegram_chat_id)
 
 
 # ==================== AI NUTRITION ADVISOR ====================
@@ -711,9 +622,7 @@ async def generate_ai_nutrition_response(mother, message_text):
     try:
         time_ctx = get_time_context()
 
-        assessments = list(assessments_collection.find(
-            {'mother_id': mother['_id']}
-        ).sort('timestamp', -1).limit(1))
+        assessments = assessments_repo.list_by_mother(mother['_id'], limit=1)
 
         context = f"""
 {time_ctx['greeting']}! {time_ctx['time_specific']}.
@@ -757,7 +666,7 @@ Provide a personalized nutrition recommendation:
 """
 
         response = groq_client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model=FAST_MODEL,
             messages=[
                 {"role": "system", "content": "You are a caring maternal nutrition advisor in India."},
                 {"role": "user", "content": prompt}
@@ -787,8 +696,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     # Check if user is in active AI registration flow
-    if registration_sessions is not None:
-        session = registration_sessions.find_one({"telegram_chat_id": str(chat_id)})
+    if db is not None:
+        session = registration_repo.get_session(chat_id)
         if session and session.get('registration_active'):
             handled = await handle_registration_input(update, context)
             if handled:
@@ -798,7 +707,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     message_text = update.message.text if update.message.text else ''
-    mother = mothers_collection.find_one({'telegram_chat_id': str(chat_id)})
+    mother = mothers_repo.get_by_telegram_chat_id(chat_id)
 
     if not mother:
         await update.message.reply_text("Please register first using /start")
@@ -822,15 +731,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Regular message - save for healthcare team
         if message_text:
             message_data = {
-                'mother_id': mother['_id'],
+                'mother_id': str(mother['_id']),
                 'mother_name': mother.get('name'),
                 'telegram_chat_id': str(chat_id),
                 'message_type': 'from_mother',
                 'content': message_text,
-                'timestamp': datetime.now(timezone.utc),
-                'read': False
+                'message': message_text,
+                'read': False,
             }
-            messages_collection.insert_one(message_data)
+            messages_repo.create(message_data)
 
         await update.message.reply_text(
             "📨 Message received! Your healthcare team will respond soon.\n\n"
@@ -847,11 +756,11 @@ def main():
         return
 
     if db is None:
-        print("❌ ERROR: MongoDB connection failed")
+        print("❌ ERROR: Database connection failed (check DATABASE_URL)")
         return
 
     print(f"✅ Bot token found: {BOT_TOKEN[:10]}...")
-    print("✅ MongoDB connected")
+    print("✅ Postgres connected")
     if reg_engine:
         print("✅ AI Registration Engine ready")
     if voice_processor:

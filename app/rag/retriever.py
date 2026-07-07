@@ -330,7 +330,7 @@ class ASHARAGEngine:
             raise ValueError("GROQ_API_KEY required for RAG engine")
         
         self.llm_client = Groq(api_key=groq_api_key)
-        self.model = "llama-3.1-8b-instant"
+        self.model = os.getenv("LLM_MODEL_FAST", "llama-3.1-8b-instant")
         
         logger.info("✓ ASHA RAG Engine initialized")
     

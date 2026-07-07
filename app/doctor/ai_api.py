@@ -5,10 +5,10 @@ REST API endpoints for Doctor Portal AI Assistant integration.
 """
 
 from flask import Blueprint, request, jsonify
-from bson import ObjectId
 import logging
 from datetime import datetime
 
+from app.repositories import mothers_repo, assessments_repo
 from app.doctor.ai_assistant import get_doctor_assistant, DoctorAIAssistant
 
 # Setup logging
@@ -17,12 +17,6 @@ logger = logging.getLogger(__name__)
 
 # Create blueprint
 doctor_ai_bp = Blueprint('doctor_ai', __name__, url_prefix='/doctor/ai')
-
-
-def get_db():
-    """Get MongoDB database connection."""
-    from app.db import get_db as get_mongo_db
-    return get_mongo_db()
 
 
 @doctor_ai_bp.route('/analyze-case', methods=['POST'])
@@ -229,17 +223,13 @@ def _build_case_from_db(mother_id: str) -> dict:
     - Full assessment history
     """
     try:
-        db = get_db()
-        
         # Get mother information
-        mother = db.mothers.find_one({"_id": ObjectId(mother_id)})
+        mother = mothers_repo.get_by_id(mother_id)
         if not mother:
             return None
-        
+
         # Get ALL assessments sorted by timestamp (most recent first)
-        all_assessments = list(db.assessments.find(
-            {"mother_id": ObjectId(mother_id)}
-        ).sort("timestamp", -1))
+        all_assessments = assessments_repo.list_by_mother(mother_id)
         
         latest_assessment = all_assessments[0] if all_assessments else None
         

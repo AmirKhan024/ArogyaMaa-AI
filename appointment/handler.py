@@ -71,17 +71,11 @@ async def start_appointment_flow(update: Update, context: ContextTypes.DEFAULT_T
     context.user_data['appointment_active'] = True
     context.user_data['appointment_data'] = {}
 
-    # Try to pre-fill from MongoDB
+    # Try to pre-fill name/age/phone from the mother's profile (Postgres)
     pre_filled = False
     try:
-        from pymongo import MongoClient
-        from dotenv import load_dotenv
-        load_dotenv()
-        mongo_uri = os.getenv('MONGODB_URI', os.getenv('MONGO_URI', 'mongodb://localhost:27017'))
-        db_name = os.getenv('MONGODB_DB_NAME', os.getenv('DB_NAME', 'ArogyaMaa'))
-        client = MongoClient(mongo_uri)
-        db = client[db_name]
-        mother = db['mothers'].find_one({'telegram_chat_id': str(chat_id)})
+        from app.repositories import mothers_repo
+        mother = mothers_repo.get_by_telegram_chat_id(chat_id)
 
         if mother:
             name = mother.get('name')
@@ -106,10 +100,8 @@ async def start_appointment_flow(update: Update, context: ContextTypes.DEFAULT_T
                     f"अब कृपया अपॉइंटमेंट की तारीख बताएं।"
                 )
                 await _send_appt_text(update, context, pre_fill_msg, parse_mode='Markdown')
-
-        client.close()
     except Exception as e:
-        logger.error(f"[Appointment] MongoDB pre-fill failed: {e}")
+        logger.error(f"[Appointment] Profile pre-fill failed: {e}")
 
     if not pre_filled:
         # No pre-fill — ask all 6 fields

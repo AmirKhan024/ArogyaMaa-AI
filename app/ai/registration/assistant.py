@@ -5,6 +5,8 @@ Groq LLM wrapper used by the RegistrationEngine for data extraction
 and empathetic question generation.
 """
 
+import os
+
 from groq import Groq
 
 
@@ -12,7 +14,8 @@ class AIAssistant:
     def __init__(self, groq_api_key: str):
         self.client = Groq(api_key=groq_api_key)
 
-    def _call_groq(self, prompt: str, system_prompt: str, model="llama-3.3-70b-versatile") -> str:
+    def _call_groq(self, prompt: str, system_prompt: str,
+                   model=os.getenv("LLM_MODEL", "openai/gpt-oss-120b")) -> str:
         """Call Groq API with specific model and system prompt."""
         try:
             response = self.client.chat.completions.create(

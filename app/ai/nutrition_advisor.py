@@ -20,7 +20,7 @@ from app.repositories import mothers_repo, assessments_repo, messages_repo, cons
 
 # Initialize Groq client
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-DEFAULT_MODEL = "llama-3.1-8b-instant"
+DEFAULT_MODEL = os.getenv("LLM_MODEL_FAST", "llama-3.1-8b-instant")
 
 
 def get_time_context() -> Dict[str, str]:

@@ -1,7 +1,7 @@
 """
 Repository Layer for ArogyaMaa
 
-Clean data access layer for all MongoDB collections.
+Clean data access layer for all Postgres (Supabase) tables.
 Import repositories from this package for use in blueprints and services.
 
 Usage:
@@ -19,6 +19,7 @@ from . import consultations_repo
 from . import documents_repo
 from . import messages_repo
 from . import registration_repo
+from . import rag_threads_repo
 
 __all__ = [
     'mothers_repo',
@@ -28,5 +29,6 @@ __all__ = [
     'consultations_repo',
     'documents_repo',
     'messages_repo',
-    'registration_repo'
+    'registration_repo',
+    'rag_threads_repo',
 ]

@@ -7,9 +7,9 @@ Provides REST API endpoints for ASHA portal integration.
 from flask import Blueprint, request, jsonify, current_app
 from functools import wraps
 import logging
-from datetime import datetime
-from bson import ObjectId
+from datetime import datetime, timezone
 
+from app.repositories import rag_threads_repo
 from app.rag.retriever import ASHARAGEngine
 from app.rag.safety import ASHASafetyFilter, ResponseValidator, ConfidenceScorer, QuerySafetyLevel
 
@@ -268,12 +268,6 @@ def get_stats():
 # CHAT HISTORY PERSISTENCE (LangGraph-style threading)
 # ============================================================================
 
-def get_db():
-    """Get MongoDB database connection."""
-    from app.db import get_db as get_mongo_db
-    return get_mongo_db()
-
-
 @asha_rag_bp.route('/threads', methods=['GET'])
 def list_threads():
     """List all chat threads for an ASHA worker."""
@@ -281,22 +275,14 @@ def list_threads():
         asha_id = request.args.get('asha_id')
         if not asha_id:
             return jsonify({"status": "error", "message": "asha_id required"}), 400
-        
-        db = get_db()
-        threads = list(db.rag_chat_threads.find(
-            {"asha_id": asha_id},
-            {"messages": 0}  # Exclude messages for list view
-        ).sort("updated_at", -1).limit(50))
-        
-        # Convert ObjectId to string
-        for thread in threads:
-            thread['_id'] = str(thread['_id'])
-        
+
+        threads = rag_threads_repo.list_by_asha(asha_id, limit=50)
+
         return jsonify({
             "status": "success",
             "threads": threads
         }), 200
-        
+
     except Exception as e:
         logger.error(f"Error listing threads: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -309,27 +295,17 @@ def create_thread():
         data = request.get_json()
         asha_id = data.get('asha_id')
         title = data.get('title', 'New Chat')
-        
+
         if not asha_id:
             return jsonify({"status": "error", "message": "asha_id required"}), 400
-        
-        db = get_db()
-        thread = {
-            "asha_id": asha_id,
-            "title": title,
-            "messages": [],
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
-        }
-        
-        result = db.rag_chat_threads.insert_one(thread)
-        thread['_id'] = str(result.inserted_id)
-        
+
+        thread = rag_threads_repo.create(asha_id, title)
+
         return jsonify({
             "status": "success",
             "thread": thread
         }), 201
-        
+
     except Exception as e:
         logger.error(f"Error creating thread: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -339,19 +315,16 @@ def create_thread():
 def get_thread(thread_id):
     """Get a specific chat thread with all messages."""
     try:
-        db = get_db()
-        thread = db.rag_chat_threads.find_one({"_id": ObjectId(thread_id)})
-        
+        thread = rag_threads_repo.get_by_id(thread_id)
+
         if not thread:
             return jsonify({"status": "error", "message": "Thread not found"}), 404
-        
-        thread['_id'] = str(thread['_id'])
-        
+
         return jsonify({
             "status": "success",
             "thread": thread
         }), 200
-        
+
     except Exception as e:
         logger.error(f"Error getting thread: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -364,19 +337,17 @@ def add_message(thread_id):
         data = request.get_json()
         user_query = data.get('query', '').strip()
         asha_id = data.get('asha_id')
-        
+
         if not user_query:
             return jsonify({"status": "error", "message": "Query required"}), 400
-        
-        db = get_db()
-        
+
         # Create user message
         user_message = {
             "role": "user",
             "content": user_query,
-            "timestamp": datetime.utcnow()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
-        
+
         # Get RAG response (reuse query logic)
         safety_filter = get_safety_filter()
         safety_level, block_reason = safety_filter.validate_query(user_query)
@@ -387,7 +358,7 @@ def add_message(thread_id):
                 "content": safety_filter.get_blocked_response(user_query, block_reason),
                 "confidence": 0.0,
                 "blocked": True,
-                "timestamp": datetime.utcnow()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         else:
             rag_engine = get_rag_engine()
@@ -403,21 +374,15 @@ def add_message(thread_id):
                 "content": response,
                 "confidence": confidence,
                 "blocked": False,
-                "timestamp": datetime.utcnow()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
-        
+
         # Update thread with new messages
-        db.rag_chat_threads.update_one(
-            {"_id": ObjectId(thread_id)},
-            {
-                "$push": {"messages": {"$each": [user_message, assistant_message]}},
-                "$set": {
-                    "updated_at": datetime.utcnow(),
-                    "title": user_query[:50] + "..." if len(user_query) > 50 else user_query
-                }
-            }
+        new_title = user_query[:50] + "..." if len(user_query) > 50 else user_query
+        rag_threads_repo.append_messages(
+            thread_id, [user_message, assistant_message], title=new_title
         )
-        
+
         return jsonify({
             "status": "success",
             "response": assistant_message["content"],
@@ -434,14 +399,11 @@ def add_message(thread_id):
 def delete_thread(thread_id):
     """Delete a chat thread."""
     try:
-        db = get_db()
-        result = db.rag_chat_threads.delete_one({"_id": ObjectId(thread_id)})
-        
-        if result.deleted_count == 0:
+        if not rag_threads_repo.delete(thread_id):
             return jsonify({"status": "error", "message": "Thread not found"}), 404
-        
+
         return jsonify({"status": "success", "message": "Thread deleted"}), 200
-        
+
     except Exception as e:
         logger.error(f"Error deleting thread: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500

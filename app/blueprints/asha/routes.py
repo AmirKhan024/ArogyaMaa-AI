@@ -8,7 +8,6 @@ URL Prefix: /asha
 """
 
 from flask import Blueprint, request, jsonify, current_app
-from bson import ObjectId
 from datetime import datetime
 from werkzeug.utils import secure_filename
 import os
@@ -198,16 +197,12 @@ def submit_assessment():
                 "missing": missing_vitals
             }), 400
         
-        # Convert IDs to ObjectId
+        # Normalize IDs to strings (Postgres uses UUID strings)
         try:
-            # Handle if already ObjectId or string
-            asha_id_raw = data['asha_id']
-            mother_id_raw = data['mother_id']
-            
-            asha_id = ObjectId(asha_id_raw) if not isinstance(asha_id_raw, ObjectId) else asha_id_raw
-            mother_id = ObjectId(mother_id_raw) if not isinstance(mother_id_raw, ObjectId) else mother_id_raw
+            asha_id = str(data['asha_id'])
+            mother_id = str(data['mother_id'])
         except Exception as e:
-            current_app.logger.error(f"ID conversion error: {e}, asha_id={data.get('asha_id')}, mother_id={data.get('mother_id')}")
+            current_app.logger.error(f"ID normalization error: {e}, asha_id={data.get('asha_id')}, mother_id={data.get('mother_id')}")
             return jsonify({
                 "error": "Invalid asha_id or mother_id format",
                 "details": str(e)
@@ -574,12 +569,9 @@ def upload_document():
         if not all([mother_id, asha_id, document_type]):
             return jsonify({"error": "Missing required fields"}), 400
         
-        # Convert IDs
-        try:
-            mother_id = ObjectId(mother_id)
-            asha_id = ObjectId(asha_id)
-        except Exception:
-            return jsonify({"error": "Invalid ID format"}), 400
+        # Normalize IDs to strings
+        mother_id = str(mother_id)
+        asha_id = str(asha_id)
         
         # Verify mother exists
         mother = mothers_repo.get_by_id(mother_id)
@@ -777,8 +769,6 @@ def get_notifications(asha_id):
     Includes doctor reviews, system alerts, etc.
     """
     try:
-        from app.db import get_collection
-        
         # Get all messages TO this ASHA worker
         messages = messages_repo.list_by_recipient(asha_id, recipient_type='asha')
         
@@ -847,17 +837,11 @@ def get_notifications(asha_id):
 def mark_notification_read(notification_id):
     """Mark a notification as read."""
     try:
-        from app.db import get_collection
-        messages = get_collection('messages')
-        
-        result = messages.update_one(
-            {'_id': ObjectId(notification_id)},
-            {'$set': {'read': True}}
-        )
-        
+        modified = messages_repo.mark_notification_read(notification_id)
+
         return jsonify({
             "success": True,
-            "modified": result.modified_count > 0
+            "modified": modified
         }), 200
     
     except Exception as e:
@@ -874,21 +858,12 @@ def mark_all_read():
     try:
         data = request.get_json()
         asha_id = data.get('asha_id')
-        
-        from app.db import get_collection
-        messages = get_collection('messages')
-        
-        result = messages.update_many(
-            {
-                'to_asha_id': ObjectId(asha_id),
-                'read': {'$ne': True}
-            },
-            {'$set': {'read': True}}
-        )
-        
+
+        marked_count = messages_repo.mark_all_notifications_read(asha_id)
+
         return jsonify({
             "success": True,
-            "marked_count": result.modified_count
+            "marked_count": marked_count
         }), 200
     
     except Exception as e:

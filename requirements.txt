@@ -2,8 +2,12 @@
 Flask
 python-dotenv
 
-# MongoDB
-pymongo
+# Database (Supabase / Postgres)
+SQLAlchemy
+psycopg[binary]
+
+# Security
+bcrypt
 
 # Telegram Bot API
 python-telegram-bot
@@ -20,6 +24,7 @@ langgraph
 langsmith
 groq
 httpx-sse
+pydantic
 pydantic-settings
 
 # RAG & Vector Database
@@ -30,16 +35,14 @@ sentence-transformers
 pypdf
 pdfplumber
 
-# Voice Processing (TTS + Audio Conversion)
+# Voice Processing (STT via Groq Whisper, TTS via Edge-TTS + audio conversion)
 edge-tts>=6.1.10
 pydub>=0.25.1
 
 # Utilities
 requests
 tiktoken
+dateparser
 
-# Appointment Module (voice booking)
-openai
-openpyxl
-huggingface_hub
-dateparser
+# Testing
+pytest

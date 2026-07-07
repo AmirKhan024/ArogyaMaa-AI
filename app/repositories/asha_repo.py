@@ -1,252 +1,116 @@
 """
 ASHA Worker Repository
 
-Data access layer for the 'asha_workers' collection.
-Handles all CRUD operations for ASHA worker profiles.
+Data access layer for the 'asha_workers' table (Postgres).
+Function names, signatures, and return shapes preserved from the MongoDB version.
 """
 
-from bson import ObjectId
-from datetime import datetime
-from app.db import get_collection
+from app.repositories._sql import (
+    fetch_all, fetch_one, insert_row, update_by_id, utcnow,
+)
+
+_KNOWN = {
+    "username", "password_hash", "name", "phone", "area", "district", "state",
+    "active", "assigned_mothers", "performance_stats", "joined_at",
+}
+_JSONB = {"assigned_mothers", "performance_stats"}
+
+_DEFAULT_STATS = {
+    "total_assessments": 0,
+    "high_risk_detected": 0,
+    "moderate_risk_detected": 0,
+    "low_risk_detected": 0,
+    "average_assessments_per_week": 0.0,
+    "last_assessment_date": None,
+}
 
 
 def create(asha_data):
-    """
-    Create a new ASHA worker profile.
-    
-    Args:
-        asha_data: Dictionary containing ASHA information
-            Required fields:
-                - name: str
-                - phone: str
-                - area: str
-            Optional fields:
-                - district: str
-                - state: str
-                - assigned_mothers: list of ObjectId
-                - performance_stats: dict
-    
-    Returns:
-        ObjectId of the created ASHA worker
-    """
-    asha_workers = get_collection('asha_workers')
-    
-    # Set default values
-    asha_data.setdefault('assigned_mothers', [])
-    asha_data.setdefault('performance_stats', {
-        'total_assessments': 0,
-        'high_risk_detected': 0,
-        'moderate_risk_detected': 0,
-        'low_risk_detected': 0,
-        'average_assessments_per_week': 0.0,
-        'last_assessment_date': None
-    })
-    asha_data.setdefault('joined_at', datetime.utcnow())
-    asha_data.setdefault('active', True)
-    
-    result = asha_workers.insert_one(asha_data)
-    return result.inserted_id
+    """Create a new ASHA worker profile. Returns the new id (str)."""
+    asha_data.setdefault("assigned_mothers", [])
+    asha_data.setdefault("performance_stats", dict(_DEFAULT_STATS))
+    asha_data.setdefault("joined_at", utcnow())
+    asha_data.setdefault("active", True)
+    return insert_row("asha_workers", asha_data, known_cols=_KNOWN, jsonb_cols=_JSONB)
 
 
 def get_by_id(asha_id):
-    """
-    Get an ASHA worker by ObjectId.
-    
-    Args:
-        asha_id: ObjectId or string representation
-    
-    Returns:
-        ASHA worker document or None if not found
-    """
-    asha_workers = get_collection('asha_workers')
-    
-    if isinstance(asha_id, str):
-        asha_id = ObjectId(asha_id)
-    
-    return asha_workers.find_one({'_id': asha_id})
+    return fetch_one("select * from asha_workers where id = cast(:id as uuid)", {"id": str(asha_id)})
 
 
-# Alias for consistency
 find_by_id = get_by_id
 
 
 def get_by_phone(phone):
-    """
-    Get an ASHA worker by phone number.
-    
-    Args:
-        phone: Phone number (string)
-    
-    Returns:
-        ASHA worker document or None if not found
-    """
-    asha_workers = get_collection('asha_workers')
-    return asha_workers.find_one({'phone': phone})
+    return fetch_one("select * from asha_workers where phone = :phone", {"phone": phone})
+
+
+def get_by_username(username):
+    """Case-insensitive username lookup (used by auth + admin duplicate checks)."""
+    return fetch_one(
+        "select * from asha_workers where lower(username) = lower(:u)", {"u": username}
+    )
 
 
 def list_all_active():
-    """
-    List all active ASHA workers.
-    
-    Returns:
-        List of active ASHA worker documents
-    """
-    asha_workers = get_collection('asha_workers')
-    return list(asha_workers.find({'active': True}))
+    return fetch_all("select * from asha_workers where active = true order by joined_at")
 
 
 def list_all():
-    """
-    List all ASHA workers (active and inactive).
-    
-    Returns:
-        List of all ASHA worker documents
-    """
-    asha_workers = get_collection('asha_workers')
-    return list(asha_workers.find({}))
+    return fetch_all("select * from asha_workers order by joined_at")
 
 
 def list_by_area(area):
-    """
-    List all ASHA workers in a specific area.
-    
-    Args:
-        area: Area name (string)
-    
-    Returns:
-        List of ASHA worker documents
-    """
-    asha_workers = get_collection('asha_workers')
-    return list(asha_workers.find({'area': area, 'active': True}))
+    return fetch_all(
+        "select * from asha_workers where area = :area and active = true order by joined_at",
+        {"area": area},
+    )
 
 
 def update(asha_id, update_data):
-    """
-    Update an ASHA worker's profile.
-    
-    Args:
-        asha_id: ObjectId or string representation
-        update_data: Dictionary of fields to update
-    
-    Returns:
-        True if updated, False if not found
-    """
-    asha_workers = get_collection('asha_workers')
-    
-    if isinstance(asha_id, str):
-        asha_id = ObjectId(asha_id)
-    
-    result = asha_workers.update_one(
-        {'_id': asha_id},
-        {'$set': update_data}
-    )
-    
-    return result.modified_count > 0
+    return update_by_id("asha_workers", asha_id, update_data, known_cols=_KNOWN, jsonb_cols=_JSONB)
 
 
 def add_mother_assignment(asha_id, mother_id):
-    """
-    Add a mother to an ASHA worker's assigned list.
-    
-    Args:
-        asha_id: ObjectId or string representation
-        mother_id: ObjectId or string representation
-    
-    Returns:
-        True if added, False if not found or already assigned
-    """
-    asha_workers = get_collection('asha_workers')
-    
-    if isinstance(asha_id, str):
-        asha_id = ObjectId(asha_id)
-    if isinstance(mother_id, str):
-        mother_id = ObjectId(mother_id)
-    
-    result = asha_workers.update_one(
-        {'_id': asha_id},
-        {'$addToSet': {'assigned_mothers': mother_id}}
-    )
-    
-    return result.modified_count > 0
+    """Add a mother id to assigned_mothers (JSONB array, de-duplicated)."""
+    row = get_by_id(asha_id)
+    if not row:
+        return False
+    ids = [str(x) for x in (row.get("assigned_mothers") or [])]
+    if str(mother_id) in ids:
+        return False
+    ids.append(str(mother_id))
+    return update(asha_id, {"assigned_mothers": ids})
 
 
 def remove_mother_assignment(asha_id, mother_id):
-    """
-    Remove a mother from an ASHA worker's assigned list.
-    
-    Args:
-        asha_id: ObjectId or string representation
-        mother_id: ObjectId or string representation
-    
-    Returns:
-        True if removed, False if not found
-    """
-    asha_workers = get_collection('asha_workers')
-    
-    if isinstance(asha_id, str):
-        asha_id = ObjectId(asha_id)
-    if isinstance(mother_id, str):
-        mother_id = ObjectId(mother_id)
-    
-    result = asha_workers.update_one(
-        {'_id': asha_id},
-        {'$pull': {'assigned_mothers': mother_id}}
-    )
-    
-    return result.modified_count > 0
+    row = get_by_id(asha_id)
+    if not row:
+        return False
+    ids = [str(x) for x in (row.get("assigned_mothers") or []) if str(x) != str(mother_id)]
+    return update(asha_id, {"assigned_mothers": ids})
 
 
 def increment_assessment_count(asha_id, risk_category):
-    """
-    Increment assessment statistics for an ASHA worker.
-    
-    Args:
-        asha_id: ObjectId or string representation
-        risk_category: 'LOW', 'MODERATE', or 'HIGH'
-    
-    Returns:
-        True if updated, False if not found
-    """
-    asha_workers = get_collection('asha_workers')
-    
-    if isinstance(asha_id, str):
-        asha_id = ObjectId(asha_id)
-    
-    # Map risk category to field name
-    risk_field_map = {
-        'LOW': 'performance_stats.low_risk_detected',
-        'MODERATE': 'performance_stats.moderate_risk_detected',
-        'HIGH': 'performance_stats.high_risk_detected'
-    }
-    
-    risk_field = risk_field_map.get(risk_category.upper())
-    if not risk_field:
+    """Increment total + per-category counters inside performance_stats (JSONB)."""
+    row = get_by_id(asha_id)
+    if not row:
         return False
-    
-    result = asha_workers.update_one(
-        {'_id': asha_id},
-        {
-            '$inc': {
-                'performance_stats.total_assessments': 1,
-                risk_field: 1
-            },
-            '$set': {
-                'performance_stats.last_assessment_date': datetime.utcnow()
-            }
-        }
-    )
-    
-    return result.modified_count > 0
+    field_map = {
+        "LOW": "low_risk_detected",
+        "MODERATE": "moderate_risk_detected",
+        "HIGH": "high_risk_detected",
+        "CRITICAL": "high_risk_detected",
+    }
+    field = field_map.get((risk_category or "").upper())
+    if not field:
+        return False
+    stats = dict(row.get("performance_stats") or _DEFAULT_STATS)
+    stats["total_assessments"] = (stats.get("total_assessments") or 0) + 1
+    stats[field] = (stats.get(field) or 0) + 1
+    stats["last_assessment_date"] = utcnow().isoformat()
+    return update(asha_id, {"performance_stats": stats})
 
 
 def deactivate(asha_id):
-    """
-    Deactivate an ASHA worker.
-    
-    Args:
-        asha_id: ObjectId or string representation
-    
-    Returns:
-        True if deactivated, False if not found
-    """
-    return update(asha_id, {'active': False})
+    return update(asha_id, {"active": False})

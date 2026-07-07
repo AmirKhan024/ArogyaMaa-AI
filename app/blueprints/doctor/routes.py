@@ -8,7 +8,6 @@ URL Prefix: /doctor
 """
 
 from flask import Blueprint, request, jsonify, current_app
-from bson import ObjectId
 from datetime import datetime
 from app.repositories import (
     mothers_repo, 
@@ -479,9 +478,9 @@ def submit_consultation():
         
         # Create consultation record
         consultation_data = {
-            'assessment_id': ObjectId(assessment_id),
-            'mother_id': mother_id,
-            'doctor_id': ObjectId(doctor_id),
+            'assessment_id': str(assessment_id),
+            'mother_id': str(mother_id),
+            'doctor_id': str(doctor_id),
             'diagnosis': data['diagnosis'],
             'clinical_observations': data.get('clinical_observations', ''),
             'updated_vitals': data.get('updated_vitals', {}),
@@ -543,18 +542,14 @@ Take care! 💚
             # Log message in messages collection with delivery status
             try:
                 messages_repo.create({
-                    'mother_id': mother_id,
-                    'assessment_id': ObjectId(assessment_id),
-                    'consultation_id': consultation_id,
-                    'sender_type': 'doctor',
-                    'sender_id': ObjectId(doctor_id),
-                    'sender_name': doctor.get('name'),
-                    'recipient_type': 'mother',
-                    'recipient_id': mother_id,
-                    'message_text': mother_message,
-                    'delivery_status': 'sent' if telegram_sent else 'failed',
-                    'delivery_error': telegram_error,
-                    'created_at': datetime.utcnow()
+                    'mother_id': str(mother_id),
+                    'mother_name': mother.get('name'),
+                    'from_doctor': True,
+                    'doctor_name': doctor.get('name'),
+                    'message_type': 'doctor_consultation',
+                    'content': mother_message,
+                    'message': mother_message,
+                    'read': False,
                 })
             except Exception as log_err:
                 current_app.logger.error(f"Failed to log message: {log_err}")
@@ -657,17 +652,14 @@ If you have questions, contact your ASHA worker.
         # Log message in messages collection with delivery status
         try:
             messages_repo.create({
-                'mother_id': ObjectId(mother_id),
-                'sender_type': 'doctor',
-                'sender_id': ObjectId(doctor_id),
-                'sender_name': doctor.get('name'),
-                'recipient_type': 'mother',
-                'recipient_id': ObjectId(mother_id),
-                'message_text': message_text,
-                'delivery_status': 'sent' if telegram_sent else 'failed',
-                'delivery_error': telegram_error,
-                'telegram_message_id': telegram_message_id,
-                'created_at': datetime.utcnow()
+                'mother_id': str(mother_id),
+                'mother_name': mother.get('name'),
+                'from_doctor': True,
+                'doctor_name': doctor.get('name'),
+                'message_type': 'doctor_message',
+                'content': message_text,
+                'message': message_text,
+                'read': False,
             })
         except Exception as log_err:
             current_app.logger.error(f"Failed to log message: {log_err}")
@@ -748,7 +740,7 @@ def review_document():
         # Create doctor review record
         review_data = {
             "reviewed_at": datetime.utcnow(),
-            "reviewed_by_doctor_id": ObjectId(doctor_id),
+            "reviewed_by_doctor_id": str(doctor_id),
             "doctor_name": doctor.get('name'),
             "notes": notes,
             "ai_overridden": ai_overridden,
@@ -780,14 +772,16 @@ View full details in the portal.
                 
                 # Save message to database
                 message_data = {
-                    "mother_id": ObjectId(mother_id),
+                    "mother_id": str(mother_id),
+                    "mother_name": mother.get('name'),
                     "from_doctor": True,
-                    "from_doctor_id": ObjectId(doctor_id),
-                    "to_asha": True,
-                    "to_asha_id": asha_id,
+                    "doctor_name": doctor.get('name'),
+                    "to_asha_id": str(asha_id),
+                    "message_type": "doctor_review",
+                    "content": message_text,
                     "message": message_text,
-                    "timestamp": datetime.utcnow(),
-                    "document_id": ObjectId(document_id)
+                    "read": False,
+                    "document_id": str(document_id),
                 }
                 messages_repo.create(message_data)
                 notifications_sent.append('ASHA Portal')
@@ -819,14 +813,15 @@ If you have questions, please contact your ASHA worker or doctor.
                     
                     # Log message in database
                     message_data = {
-                        "mother_id": ObjectId(mother_id),
+                        "mother_id": str(mother_id),
+                        "mother_name": mother.get('name'),
                         "from_doctor": True,
-                        "from_doctor_id": ObjectId(doctor_id),
-                        "to_mother": True,
+                        "doctor_name": doctor.get('name'),
+                        "message_type": "doctor_review_mother",
+                        "content": notes,
                         "message": notes,
-                        "timestamp": datetime.utcnow(),
-                        "telegram_sent": True,
-                        "document_id": ObjectId(document_id)
+                        "read": False,
+                        "document_id": str(document_id),
                     }
                     messages_repo.create(message_data)
                     

@@ -9,7 +9,6 @@ URL Prefix: /admin
 
 from flask import Blueprint, jsonify, request
 from app.repositories import mothers_repo, asha_repo, doctors_repo, assessments_repo
-from bson import ObjectId
 from datetime import datetime, timedelta
 
 admin_bp = Blueprint('admin', __name__)
@@ -260,7 +259,7 @@ def assign_worker():
                 asha_repo.remove_mother_assignment(str(old_asha_id), mother_id)
             
             # Update mother's assigned ASHA
-            mothers_repo.update(mother_id, {'assigned_asha_id': ObjectId(asha_id)})
+            mothers_repo.update(mother_id, {'assigned_asha_id': str(asha_id)})
             
             # Add to new ASHA's assigned list
             asha_repo.add_mother_assignment(asha_id, mother_id)
@@ -276,7 +275,7 @@ def assign_worker():
                 doctors_repo.remove_mother_assignment(str(old_doctor_id), mother_id)
             
             # Update mother's assigned doctor
-            mothers_repo.update(mother_id, {'assigned_doctor_id': ObjectId(doctor_id)})
+            mothers_repo.update(mother_id, {'assigned_doctor_id': str(doctor_id)})
             
             # Add to new doctor's assigned list
             doctors_repo.add_mother_assignment(doctor_id, mother_id)
@@ -303,10 +302,13 @@ def add_asha():
                 return jsonify({"error": f"Missing required field: {field}"}), 400
         
         # Check if username exists
-        from app.db import get_collection
-        if get_collection('asha_workers').find_one({'username': data['username']}):
+        if asha_repo.get_by_username(data['username']):
             return jsonify({"error": "Username already exists"}), 400
-        
+
+        # Hash the password (never store plaintext)
+        from app.security import hash_password
+        data['password_hash'] = hash_password(data.pop('password'))
+
         # Create record
         asha_id = asha_repo.create(data)
         
@@ -333,10 +335,13 @@ def add_doctor():
                 return jsonify({"error": f"Missing required field: {field}"}), 400
         
         # Check if username exists
-        from app.db import get_collection
-        if get_collection('doctors').find_one({'username': data['username']}):
+        if doctors_repo.get_by_username(data['username']):
             return jsonify({"error": "Username already exists"}), 400
-        
+
+        # Hash the password (never store plaintext)
+        from app.security import hash_password
+        data['password_hash'] = hash_password(data.pop('password'))
+
         # Create record
         doctor_id = doctors_repo.create(data)
         

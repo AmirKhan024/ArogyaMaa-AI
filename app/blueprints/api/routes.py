@@ -5,8 +5,14 @@ General API endpoints accessible to all user types (ASHA, Doctor, Mother).
 """
 
 from flask import Blueprint, jsonify, current_app
-from bson import ObjectId
 from app.repositories import documents_repo, mothers_repo
+
+
+def _iso(val):
+    """Return an ISO string whether val is a datetime or already a string."""
+    if val is None:
+        return None
+    return val.isoformat() if hasattr(val, 'isoformat') else str(val)
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
@@ -46,7 +52,7 @@ def get_document_details(document_id):
         doctor_review = document.get('doctor_review')
         if doctor_review:
             doctor_review_clean = {
-                'reviewed_at': doctor_review.get('reviewed_at').isoformat() if doctor_review.get('reviewed_at') else None,
+                'reviewed_at': _iso(doctor_review.get('reviewed_at')),
                 'doctor_name': doctor_review.get('doctor_name'),
                 'notes': doctor_review.get('notes'),
                 'ai_overridden': doctor_review.get('ai_overridden', False),
@@ -63,7 +69,7 @@ def get_document_details(document_id):
             "mother_name": mother.get('name') if mother else 'Unknown',
             "document_type": document.get('document_type'),
             "description": document.get('description', ''),
-            "uploaded_at": document.get('uploaded_at').isoformat() if document.get('uploaded_at') else None,
+            "uploaded_at": _iso(document.get('uploaded_at')),
             "uploaded_by": document.get('uploaded_by'),
             "uploaded_by_name": uploaded_by_name or document.get('uploaded_by_name'),
             "file_metadata": document.get('file_metadata', {}),

@@ -1,227 +1,103 @@
 """
 Consultation Repository
 
-Data access layer for the 'consultations' collection.
-Stores doctor's authoritative medical input for assessments.
+Data access layer for the 'consultations' table (Postgres).
+Stores the doctor's authoritative medical input for assessments.
 """
 
-from bson import ObjectId
-from datetime import datetime
-from app.db import get_collection
+from app.repositories._sql import (
+    fetch_all, fetch_one, insert_row, update_by_id, utcnow,
+)
+
+_KNOWN = {
+    "assessment_id", "mother_id", "doctor_id", "diagnosis", "clinical_observations",
+    "updated_vitals", "treatment_plan", "next_visit_date", "overrides_ai_assessment",
+    "doctor_risk_assessment", "override_reason", "consultation_notes",
+    "message_sent_to_mother", "message_sent_at", "consultation_date",
+}
+_JSONB = {"updated_vitals", "treatment_plan"}
+_UUID = {"assessment_id", "mother_id", "doctor_id"}
 
 
 def create(consultation_data):
-    """
-    Create a new consultation record.
-    
-    Args:
-        consultation_data: Dictionary containing consultation information
-            Required fields:
-                - assessment_id: ObjectId
-                - mother_id: ObjectId
-                - doctor_id: ObjectId
-                - diagnosis: str
-            Optional fields:
-                - clinical_observations: str
-                - updated_vitals: dict
-                - treatment_plan: dict
-                - next_visit_date: datetime
-                - overrides_ai_assessment: bool
-                - doctor_risk_assessment: str
-                - override_reason: str
-                - consultation_notes: str
-    
-    Returns:
-        ObjectId of the created consultation
-    """
-    consultations = get_collection('consultations')
-    
-    # Set default values
-    consultation_data.setdefault('consultation_date', datetime.utcnow())
-    consultation_data.setdefault('overrides_ai_assessment', False)
-    consultation_data.setdefault('message_sent_to_mother', None)
-    consultation_data.setdefault('message_sent_at', None)
-    
-    result = consultations.insert_one(consultation_data)
-    return result.inserted_id
+    """Create a new consultation. Returns the new id (str)."""
+    consultation_data.setdefault("consultation_date", utcnow())
+    consultation_data.setdefault("overrides_ai_assessment", False)
+    consultation_data.setdefault("message_sent_to_mother", None)
+    consultation_data.setdefault("message_sent_at", None)
+    return insert_row(
+        "consultations", consultation_data,
+        known_cols=_KNOWN, jsonb_cols=_JSONB, uuid_cols=_UUID,
+    )
 
 
 def get_by_id(consultation_id):
-    """
-    Get a consultation by ObjectId.
-    
-    Args:
-        consultation_id: ObjectId or string representation
-    
-    Returns:
-        Consultation document or None if not found
-    """
-    consultations = get_collection('consultations')
-    
-    if isinstance(consultation_id, str):
-        consultation_id = ObjectId(consultation_id)
-    
-    return consultations.find_one({'_id': consultation_id})
+    return fetch_one(
+        "select * from consultations where id = cast(:id as uuid)", {"id": str(consultation_id)}
+    )
 
 
 def get_by_assessment_id(assessment_id):
-    """
-    Get consultation for a specific assessment.
-    
-    Args:
-        assessment_id: ObjectId or string representation
-    
-    Returns:
-        Consultation document or None if not found
-    """
-    consultations = get_collection('consultations')
-    
-    if isinstance(assessment_id, str):
-        assessment_id = ObjectId(assessment_id)
-    
-    return consultations.find_one({'assessment_id': assessment_id})
+    return fetch_one(
+        "select * from consultations where assessment_id = cast(:aid as uuid)",
+        {"aid": str(assessment_id)},
+    )
 
 
 def list_by_mother(mother_id, limit=None):
-    """
-    List all consultations for a specific mother.
-    
-    Args:
-        mother_id: ObjectId or string representation
-        limit: Maximum number of consultations to return (optional)
-    
-    Returns:
-        List of consultation documents
-    """
-    consultations = get_collection('consultations')
-    
-    if isinstance(mother_id, str):
-        mother_id = ObjectId(mother_id)
-    
-    query = consultations.find({'mother_id': mother_id}).sort('consultation_date', -1)
-    
+    lc = " limit :lim" if limit else ""
+    params = {"mid": str(mother_id)}
     if limit:
-        query = query.limit(limit)
-    
-    return list(query)
+        params["lim"] = int(limit)
+    return fetch_all(
+        "select * from consultations where mother_id = cast(:mid as uuid) "
+        "order by consultation_date desc" + lc,
+        params,
+    )
 
 
 def list_by_doctor(doctor_id, limit=None):
-    """
-    List all consultations by a specific doctor.
-    
-    Args:
-        doctor_id: ObjectId or string representation
-        limit: Maximum number of consultations to return (optional)
-    
-    Returns:
-        List of consultation documents
-    """
-    consultations = get_collection('consultations')
-    
-    if isinstance(doctor_id, str):
-        doctor_id = ObjectId(doctor_id)
-    
-    query = consultations.find({'doctor_id': doctor_id}).sort('consultation_date', -1)
-    
+    lc = " limit :lim" if limit else ""
+    params = {"did": str(doctor_id)}
     if limit:
-        query = query.limit(limit)
-    
-    return list(query)
+        params["lim"] = int(limit)
+    return fetch_all(
+        "select * from consultations where doctor_id = cast(:did as uuid) "
+        "order by consultation_date desc" + lc,
+        params,
+    )
 
 
 def get_latest_for_mother(mother_id):
-    """
-    Get the most recent consultation for a mother.
-    
-    Args:
-        mother_id: ObjectId or string representation
-    
-    Returns:
-        Consultation document or None if not found
-    """
-    consultations = get_collection('consultations')
-    
-    if isinstance(mother_id, str):
-        mother_id = ObjectId(mother_id)
-    
-    return consultations.find_one(
-        {'mother_id': mother_id},
-        sort=[('consultation_date', -1)]
+    return fetch_one(
+        "select * from consultations where mother_id = cast(:mid as uuid) "
+        "order by consultation_date desc limit 1",
+        {"mid": str(mother_id)},
     )
 
 
 def list_upcoming_visits(doctor_id=None, days_ahead=7):
-    """
-    List consultations with upcoming follow-up visits.
-    
-    Args:
-        doctor_id: Filter by specific doctor (optional)
-        days_ahead: Number of days to look ahead (default: 7)
-    
-    Returns:
-        List of consultation documents with upcoming visits
-    """
-    consultations = get_collection('consultations')
-    
-    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    future_date = datetime.utcnow().replace(hour=23, minute=59, second=59) + timedelta(days=days_ahead)
-    
-    query_filter = {
-        'next_visit_date': {
-            '$gte': today,
-            '$lte': future_date
-        }
-    }
-    
+    where_doctor = " and doctor_id = cast(:did as uuid)" if doctor_id else ""
+    params = {"days": int(days_ahead)}
     if doctor_id:
-        if isinstance(doctor_id, str):
-            doctor_id = ObjectId(doctor_id)
-        query_filter['doctor_id'] = doctor_id
-    
-    return list(consultations.find(query_filter).sort('next_visit_date', 1))
+        params["did"] = str(doctor_id)
+    return fetch_all(
+        "select * from consultations where next_visit_date >= date_trunc('day', now()) "
+        "and next_visit_date <= now() + (:days || ' days')::interval" + where_doctor +
+        " order by next_visit_date asc",
+        params,
+    )
 
 
 def update(consultation_id, update_data):
-    """
-    Update a consultation record.
-    
-    Args:
-        consultation_id: ObjectId or string representation
-        update_data: Dictionary of fields to update
-    
-    Returns:
-        True if updated, False if not found
-    """
-    consultations = get_collection('consultations')
-    
-    if isinstance(consultation_id, str):
-        consultation_id = ObjectId(consultation_id)
-    
-    result = consultations.update_one(
-        {'_id': consultation_id},
-        {'$set': update_data}
+    return update_by_id(
+        "consultations", consultation_id, update_data,
+        known_cols=_KNOWN, jsonb_cols=_JSONB, uuid_cols=_UUID,
     )
-    
-    return result.modified_count > 0
 
 
 def set_message_sent(consultation_id, message_text):
-    """
-    Record that a message was sent to the mother for this consultation.
-    
-    Args:
-        consultation_id: ObjectId or string representation
-        message_text: The message sent to the mother
-    
-    Returns:
-        True if updated, False if not found
-    """
     return update(consultation_id, {
-        'message_sent_to_mother': message_text,
-        'message_sent_at': datetime.utcnow()
+        "message_sent_to_mother": message_text,
+        "message_sent_at": utcnow(),
     })
-
-
-# Need timedelta for upcoming visits
-from datetime import timedelta

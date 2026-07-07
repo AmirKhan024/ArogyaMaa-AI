@@ -11,7 +11,6 @@ from flask import current_app
 from app.repositories import mothers_repo, messages_repo, assessments_repo, consultations_repo, registration_repo
 from app.services import telegram_service
 from app.ai.nutrition_advisor import is_nutrition_query, generate_nutrition_recommendation
-from bson import ObjectId
 from datetime import datetime
 
 
