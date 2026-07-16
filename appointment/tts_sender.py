@@ -19,7 +19,10 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 TTS_LANGUAGE_HINT = os.getenv("TTS_LANGUAGE_HINT", "Hindi")
-TEMP_AUDIO_DIR = os.getenv("TEMP_AUDIO_DIR", "temp_audio/")
+# Anchored to the repo root so the bot works regardless of launch directory.
+TEMP_AUDIO_DIR = os.getenv("TEMP_AUDIO_DIR") or os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "temp_audio"
+)
 
 # Neural voices per language hint.
 _VOICES = {

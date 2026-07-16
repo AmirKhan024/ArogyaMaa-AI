@@ -25,20 +25,29 @@ class VoiceProcessor:
         else:
             self.groq_client = None
 
-    def audio_to_text(self, ogg_file_path: str) -> str:
-        """Converts an OGG voice note to text using Groq's whisper-large-v3 model."""
+    def audio_to_text(self, ogg_file_path: str, language: str | None = None) -> str:
+        """
+        Converts an OGG voice note to text using Groq Whisper.
+
+        ``language`` is an ISO-639-1 hint ('hi', 'en', 'mr', ...). When None,
+        Whisper auto-detects the spoken language instead of assuming Hindi.
+        """
         if not self.groq_client:
             return "Please provide a valid GROQ API KEY to use the voice feature."
 
         try:
+            kwargs = {
+                "model": os.getenv("WHISPER_MODEL", "whisper-large-v3"),
+                "prompt": "Indian pregnancy health terminology",
+                "response_format": "json",
+                "temperature": 0.0,
+            }
+            if language:
+                kwargs["language"] = language
             with open(ogg_file_path, "rb") as file:
                 translation = self.groq_client.audio.transcriptions.create(
                     file=(os.path.basename(ogg_file_path), file.read()),
-                    model="whisper-large-v3",
-                    prompt="Indian pregnancy health terminology",
-                    response_format="json",
-                    language="hi",
-                    temperature=0.0
+                    **kwargs,
                 )
             return translation.text
         except Exception as e:

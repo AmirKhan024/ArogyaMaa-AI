@@ -39,3 +39,6 @@ uploads/documents/
 *.swp
 .DS_Store
 Thumbs.db
+
+# E2E screenshot output
+e2e/screens*/

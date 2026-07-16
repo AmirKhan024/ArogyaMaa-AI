@@ -5,7 +5,6 @@ Provides REST API endpoints for ASHA portal integration.
 """
 
 from flask import Blueprint, request, jsonify, current_app
-from functools import wraps
 import logging
 from datetime import datetime, timezone
 
@@ -96,18 +95,11 @@ def get_safety_filter():
     return _safety_filter
 
 
-def require_asha_role(f):
-    """Decorator to ensure only ASHA workers can access endpoint."""
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        # In production, verify user role from session/JWT
-        # For now, we'll skip authentication
-        return f(*args, **kwargs)
-    return decorated_function
+# Auth note: /asha/* (including this blueprint) is guarded centrally by the
+# before_request hook in app/__init__.py::register_route_protection.
 
 
 @asha_rag_bp.route('/query', methods=['POST'])
-@require_asha_role
 def asha_query():
     """
     Main ASHA RAG query endpoint.

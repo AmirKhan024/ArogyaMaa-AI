@@ -93,7 +93,6 @@ def register_blueprints(app):
     Register all Flask blueprints with their URL prefixes.
     
     Blueprint structure:
-    - /telegram           → Telegram bot webhook
     - /admin              → Admin dashboard APIs
     - /admin/dashboard    → Admin web interface (HTML)
     - /asha               → ASHA worker dashboard APIs
@@ -101,28 +100,24 @@ def register_blueprints(app):
     - /doctor             → Doctor dashboard APIs
     - /ai                 → AI orchestration (placeholder)
     """
-    from app.blueprints.telegram.routes import telegram_bp
     from app.blueprints.admin.routes import admin_bp
     from app.blueprints.admin_dashboard.routes import admin_dashboard_bp
     from app.blueprints.asha.routes import asha_bp
     from app.blueprints.asha_dashboard.routes import asha_dashboard_bp
     from app.blueprints.doctor.routes import doctor_bp
     from app.blueprints.doctor_dashboard import doctor_dashboard_bp
-    from app.blueprints.ai.routes import ai_bp
     from app.blueprints.api.routes import api_bp
     from app.blueprints.shared_dashboard import shared_dashboard_bp
     
     # ASHA RAG Chatbot Blueprint
     from app.rag.api import asha_rag_bp
     
-    app.register_blueprint(telegram_bp, url_prefix='/telegram')
     app.register_blueprint(admin_bp, url_prefix='/admin')
     app.register_blueprint(admin_dashboard_bp)  # Prefix defined in blueprint
     app.register_blueprint(asha_bp, url_prefix='/asha')
     app.register_blueprint(asha_dashboard_bp)  # Prefix defined in blueprint
     app.register_blueprint(doctor_bp, url_prefix='/doctor')
     app.register_blueprint(doctor_dashboard_bp)  # Prefix defined in blueprint
-    app.register_blueprint(ai_bp, url_prefix='/ai')
     app.register_blueprint(api_bp)  # Prefix defined in blueprint (/api)
     
     # ASHA RAG API endpoints (/asha/rag/*)

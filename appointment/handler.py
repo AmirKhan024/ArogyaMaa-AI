@@ -14,10 +14,11 @@ Key design decisions:
   - Falls back to text-only if TTS/STT fails
 """
 
+import asyncio
 import os
 import uuid
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -168,14 +169,15 @@ async def handle_appointment_input(update: Update, context: ContextTypes.DEFAULT
             voice = update.message.voice
             file = await context.bot.get_file(voice.file_id)
 
-            temp_dir = os.getenv("TEMP_AUDIO_DIR", "temp_audio/")
+            from appointment.tts_sender import TEMP_AUDIO_DIR as temp_dir
             os.makedirs(temp_dir, exist_ok=True)
 
             oga_path = os.path.join(temp_dir, f"appt_{uuid.uuid4()}.oga")
             await file.download_to_drive(oga_path)
 
             from appointment.transcriber import transcribe_audio
-            input_text = transcribe_audio(oga_path)
+            # Sync Groq call — run off the event loop so the bot stays responsive.
+            input_text = await asyncio.to_thread(transcribe_audio, oga_path)
 
             # Clean up
             if os.path.exists(oga_path):
@@ -256,7 +258,7 @@ async def _finalize_appointment(update: Update, context: ContextTypes.DEFAULT_TY
     # ── Build appointment record ──────────────────────────────────────────────
     appointment_id = str(uuid.uuid4())
     security_token = str(uuid.uuid4())
-    now = datetime.now().isoformat(timespec="seconds")
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     appointment = {
         "appointment_id": appointment_id,
@@ -276,11 +278,11 @@ async def _finalize_appointment(update: Update, context: ContextTypes.DEFAULT_TY
         "updated_at": now,
     }
 
-    # ── Write to Excel ────────────────────────────────────────────────────────
+    # ── Persist appointment (Postgres) ────────────────────────────────────────
     try:
         from appointment.excel_manager import write_appointment
         write_appointment(appointment)
-        logger.info(f"[Appointment] Written to Excel: {appointment_id}")
+        logger.info(f"[Appointment] Saved: {appointment_id}")
     except Exception as e:
         logger.error(f"[Appointment] Excel write failed: {e}", exc_info=True)
         error_msg = "माफ करें, अपॉइंटमेंट सेव करने में समस्या हुई। कृपया दोबारा कोशिश करें।"

@@ -148,14 +148,19 @@ def risk_stratification_node(state: ArogyaMaaState) -> ArogyaMaaState:
     
     bp_sys = vitals.get('bp_systolic', 0)
     bp_dias = vitals.get('bp_diastolic', 0)
-    # Handle both hemoglobin field name formats
-    hb = vitals.get('hemoglobin') or vitals.get('hemoglobin_g_dl') or 0
-    glucose = vitals.get('blood_glucose_random') or vitals.get('glucose_mg_dl') or 0
+    # Handle both hemoglobin field name formats. IMPORTANT: a missing optional vital must
+    # be presented as "Not measured", never 0 — "Hemoglobin: 0 g/dL" reads as fatal anemia
+    # and wrongly inflates the risk score.
+    hb = vitals.get('hemoglobin') or vitals.get('hemoglobin_g_dl')
+    glucose = vitals.get('blood_glucose_random') or vitals.get('glucose_mg_dl')
     hr = vitals.get('heart_rate', 0)
-    temp = vitals.get('temperature', 0)
+    temp = vitals.get('temperature')
     # Handle both weight field name formats
     weight = vitals.get('weight') or vitals.get('weight_kg') or 0
-    
+
+    def _measured(value, unit=""):
+        return f"{value}{unit}" if value else "Not measured (do NOT score this parameter)"
+
     symptoms_text = ', '.join(symptoms) if symptoms else "No symptoms"
     
     system_msg = """You are an expert obstetrician with 25+ years experience in high-risk pregnancy management.
@@ -197,9 +202,9 @@ Return ONLY valid JSON matching the exact schema. No other text."""
 **Vitals:**
 - BP: {bp_sys}/{bp_dias} mmHg (Severe: ≥160/110, Moderate: 140-160/90-110)
 - Heart Rate: {hr} bpm (Normal: 60-100)
-- Hemoglobin: {hb} g/dL (Severe anemia: <7, Moderate: 7-10, Normal: ≥11)
-- Glucose: {glucose} mg/dL (Severe: >200, Moderate: 140-200, Normal: <140)
-- Temperature: {temp}°F (High fever: >102, Fever: 100.4-102, Normal: 97-99)
+- Hemoglobin: {_measured(hb, ' g/dL')} (Severe anemia: <7, Moderate: 7-10, Normal: ≥11)
+- Glucose: {_measured(glucose, ' mg/dL')} (Severe: >200, Moderate: 140-200, Normal: <140)
+- Temperature: {_measured(temp, '°F')} (High fever: >102, Fever: 100.4-102, Normal: 97-99)
 
 **Symptoms:** {symptoms_text}
 

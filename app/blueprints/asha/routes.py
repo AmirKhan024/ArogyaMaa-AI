@@ -247,8 +247,19 @@ def submit_assessment():
 
         # Offline-first idempotency: field captures made without connectivity carry a
         # client-generated UUID so replays after sync never create duplicate rows.
+        # If this capture was already ingested, return success WITHOUT re-running the
+        # AI pipeline or re-sending alerts (side effects must be idempotent too).
         client_uuid = data.get('client_uuid')
         if client_uuid:
+            existing_id = assessments_repo.find_id_by_client_uuid(client_uuid)
+            if existing_id:
+                current_app.logger.info(
+                    f"Assessment replay deduped: client_uuid={client_uuid} -> {existing_id}"
+                )
+                return jsonify({
+                    "status": "already_synced",
+                    "assessment_id": existing_id,
+                }), 200
             assessment_data['client_uuid'] = client_uuid
 
         assessment_id = assessments_repo.create(assessment_data)

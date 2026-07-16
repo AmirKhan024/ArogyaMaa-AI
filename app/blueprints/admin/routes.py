@@ -14,6 +14,21 @@ from datetime import datetime, timedelta
 admin_bp = Blueprint('admin', __name__)
 
 
+def _risk_of(assessment):
+    """Risk category of an assessment (lives under ai_evaluation.risk_category)."""
+    return ((assessment.get('ai_evaluation') or {}).get('risk_category') or 'LOW').upper()
+
+
+def _date_str_of(assessment):
+    """YYYY-MM-DD of an assessment's timestamp (datetime or ISO string), or ''."""
+    ts = assessment.get('timestamp') or assessment.get('created_at')
+    if hasattr(ts, 'strftime'):
+        return ts.strftime('%Y-%m-%d')
+    if isinstance(ts, str):
+        return ts[:10]
+    return ''
+
+
 @admin_bp.route('/analytics', methods=['GET'])
 def analytics():
     """
@@ -37,7 +52,7 @@ def analytics():
         # Calculate risk distribution
         risk_counts = {'LOW': 0, 'MODERATE': 0, 'HIGH': 0, 'CRITICAL': 0}
         for assessment in all_assessments:
-            risk = assessment.get('risk_level', 'LOW')
+            risk = _risk_of(assessment)
             risk_counts[risk] = risk_counts.get(risk, 0) + 1
         
         # Get ASHA and Doctor counts
@@ -51,15 +66,14 @@ def analytics():
             date = today - timedelta(days=i)
             date_str = date.strftime('%Y-%m-%d')
             
-            day_assessments = [a for a in all_assessments 
-                             if a.get('created_at', datetime.min).strftime('%Y-%m-%d') == date_str]
-            
+            day_assessments = [a for a in all_assessments if _date_str_of(a) == date_str]
+
             risk_trend.append({
                 'date': date.strftime('%b %d'),
-                'low': len([a for a in day_assessments if a.get('risk_level') == 'LOW']),
-                'moderate': len([a for a in day_assessments if a.get('risk_level') == 'MODERATE']),
-                'high': len([a for a in day_assessments if a.get('risk_level') == 'HIGH']),
-                'critical': len([a for a in day_assessments if a.get('risk_level') == 'CRITICAL'])
+                'low': len([a for a in day_assessments if _risk_of(a) == 'LOW']),
+                'moderate': len([a for a in day_assessments if _risk_of(a) == 'MODERATE']),
+                'high': len([a for a in day_assessments if _risk_of(a) == 'HIGH']),
+                'critical': len([a for a in day_assessments if _risk_of(a) == 'CRITICAL'])
             })
         
         return jsonify({
@@ -87,7 +101,7 @@ def get_mothers():
             assessments = assessments_repo.list_by_mother(str(mother['_id']))
             latest_risk = 'LOW'
             if assessments:
-                latest_risk = assessments[0].get('risk_level', 'LOW')
+                latest_risk = _risk_of(assessments[0])
             
             # Get assigned ASHA name
             asha_name = None
@@ -146,8 +160,8 @@ def get_asha():
             asha_assessments = [a for a in all_assessments if str(a.get('asha_id')) == asha_id_str]
             
             # Count high risk detected
-            high_risk_count = len([a for a in asha_assessments 
-                                  if a.get('risk_level') in ['HIGH', 'CRITICAL']])
+            high_risk_count = len([a for a in asha_assessments
+                                  if _risk_of(a) in ['HIGH', 'CRITICAL']])
             
             # Calculate performance badge
             if assigned_mothers == 0:

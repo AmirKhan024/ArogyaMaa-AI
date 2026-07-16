@@ -13,7 +13,17 @@ voice-first Telegram bot for mothers. Being transformed to run **100% free-tier*
 
 - **Database:** Supabase/Postgres via **SQLAlchemy Core + psycopg** (`app/db.py`). There is
   NO MongoDB anymore. `DATABASE_URL` drives it (works with Supabase pooler URI *or* a local
-  Postgres — the SQL is portable).
+  Postgres — the SQL is portable). The engine sets `connect_args={"prepare_threshold": None}` —
+  REQUIRED with the Supabase transaction pooler (:6543) or prepared statements collide
+  ("DuplicatePreparedStatement"). Do not remove it.
+- **There is ONE Telegram bot: the polling bot** (`run_telegram_bot.py`). The legacy Flask
+  webhook bot (`app/blueprints/telegram/`, `app/services/telegram_handlers.py`) was DELETED —
+  do not resurrect it. `app/services/telegram_service.py` (raw HTTP sender) stays: it is used
+  by `app/ai/alerts.py` and doctor routes to push messages to mothers.
+- **Email:** Brevo SMTP via `app/services/email_service.py` (Flask-free; used by web AND bot
+  processes). Appointment doctor emails go through `appointment/email_sender.py` → Brevo.
+  Env: `BREVO_SMTP_LOGIN/KEY`, `EMAIL_FROM`, `EMAIL_FROM_NAME`, `DOCTOR_EMAIL`. Failures are
+  non-fatal by design.
 - **Data access seam = `app/repositories/*.py`.** Blueprints/services/bot must go through
   repositories, never raw SQL. Shared query/insert/update helpers live in
   `app/repositories/_sql.py`.
@@ -72,10 +82,17 @@ python run_telegram_bot.py    # Telegram bot (separate terminal)
 
 Demo creds after seeding: `doctor/doctor123`, `asha/asha123`, admin via `ADMIN_PASSWORD`.
 
+One-time for the RAG chatbot: `python -m app.rag.knowledge_ingestion` (builds the local
+ChromaDB from `rag_pdf_source/` PDFs; ~2 min).
+
 ## Verify
 
-- `python -m pytest tests/ -q` — risk scoring + auth (no DB) and repo round-trips (need
-  `DATABASE_URL` + schema applied; skipped otherwise).
+- `python -m pytest tests/ -q` — risk scoring, auth, bot handlers (no DB) plus repo
+  round-trips and offline-replay idempotency (need `DATABASE_URL` + schema; skipped otherwise).
+- Browser E2E (server running on :8000 + seeded): `python -m pytest e2e/ -q` (offline PWA
+  flow) and `python e2e/screenshot_pages.py` (screenshots every dashboard page + console
+  errors per role).
+- Email smoke: `python scripts/send_test_email.py` (real Brevo send to DOCTOR_EMAIL).
 - Quick DB-agnostic check: point `DATABASE_URL` at a throwaway local Postgres, apply
   `db/schema.sql`, run `db/seed.py`, then `python run.py`.
 - Env-only smoke: booting the app requires `SECRET_KEY` + `DATABASE_URL`; AI/voice need
@@ -95,3 +112,14 @@ Demo creds after seeding: `doctor/doctor123`, `asha/asha123`, admin via `ADMIN_P
 - `run_telegram_bot.py` runs as a separate process and calls `init_db()` itself; it uses
   repositories, not raw SQL.
 - Windows console is cp1252 — avoid non-ASCII glyphs (→, ✓) in `print()` in CLI scripts.
+- **UI:** all dashboards share `app/static/css/admin.css`, a token-based design system. The
+  class names AND CSS variable names (including legacy `--sakura-*`/`--fuji-*` aliases) are a
+  stable API referenced by template inline styles — restyle by changing values, never rename.
+  Chart.js uses the `--viz-*` status colors for risk and `--chart-1..8` for series.
+- Missing optional vitals must be presented to the AI as "Not measured", never 0
+  (`app/ai/agents.py::_measured`) — "Hemoglobin: 0" reads as fatal anemia and corrupts scores.
+- `assessments_repo.find_id_by_client_uuid` is checked in `submit_assessment` BEFORE create so
+  offline replays skip AI + alert side effects. Keep both layers of idempotency.
+- Document analysis (`app/ai/document_analyzer.py`): PDF text layer → OCR → Groq vision
+  (`GROQ_VISION_MODEL`, default llama-4-scout). If nothing is readable it returns
+  `success: False` — it must NEVER invent findings.

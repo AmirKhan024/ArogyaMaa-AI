@@ -3,302 +3,276 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ArogyaMaa — Gateway</title>
-    <meta name="description" content="ArogyaMaa AI-Supported Rural Maternal Healthcare System — Secure Login Portal">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <title>ArogyaMaa — Sign in</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32.png') }}">
     <style>
         :root {
-            --sakura-pink: #f472b6;
-            --sakura-light: #fce7f3;
-            --sakura-deep: #db2777;
-            --fuji-blue: #3b82f6;
-            --fuji-dark: #1e3a5f;
-            --fuji-sky: #93c5fd;
-            --glass-bg: rgba(255, 255, 255, 0.12);
-            --glass-border: rgba(255, 255, 255, 0.25);
-            --glass-shadow: 0 8px 32px rgba(31, 38, 135, 0.15);
+            --primary: #0f766e;
+            --primary-hover: #115e59;
+            --accent: #5eead4;
+            --ink: #0f172a;
+            --ink-2: #475569;
+            --ink-3: #94a3b8;
+            --border: #e2e8f0;
+            --surface: #ffffff;
+            --page: #f4f7f8;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+            background: var(--page);
+            color: var(--ink);
             min-height: 100vh;
             display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-            background: linear-gradient(135deg, #1e3a5f 0%, #2d4a7a 30%, #4a6fa5 50%, #c084a8 70%, #f9a8d4 90%, #fce7f3 100%);
-            position: relative;
+            -webkit-font-smoothing: antialiased;
         }
 
-        /* Animated cherry blossom petals */
-        .petal {
-            position: fixed;
-            width: 12px;
-            height: 12px;
-            background: radial-gradient(circle, #fce7f3 30%, #f9a8d4 70%, #f472b6);
-            border-radius: 50% 0 50% 0;
-            opacity: 0;
-            animation: fall linear infinite;
-            pointer-events: none;
-            z-index: 0;
-        }
-
-        @keyframes fall {
-            0% { opacity: 0; transform: translateY(-10vh) rotate(0deg) translateX(0); }
-            10% { opacity: 0.8; }
-            90% { opacity: 0.6; }
-            100% { opacity: 0; transform: translateY(110vh) rotate(720deg) translateX(80px); }
-        }
-
-        /* Mt Fuji silhouette */
-        .fuji-bg {
-            position: fixed;
-            bottom: -5%;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 120vw;
-            height: 45vh;
-            background: linear-gradient(180deg, transparent 0%, rgba(30, 58, 95, 0.08) 40%, rgba(30, 58, 95, 0.15) 100%);
-            clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
-            z-index: 0;
-        }
-
-        .fuji-snow {
-            position: fixed;
-            bottom: 28vh;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 20vw;
-            height: 12vh;
-            background: radial-gradient(ellipse, rgba(255,255,255,0.15) 0%, transparent 70%);
-            z-index: 0;
-        }
-
-        .login-wrapper {
-            position: relative;
-            z-index: 10;
+        /* ── Brand panel ─────────────────────────────────────────────── */
+        .brand-panel {
+            flex: 1.1;
+            background:
+                radial-gradient(1100px 500px at -10% 110%, rgba(94, 234, 212, 0.16), transparent 60%),
+                radial-gradient(900px 420px at 110% -10%, rgba(45, 212, 191, 0.10), transparent 55%),
+                linear-gradient(160deg, #0c3d38 0%, #092e2a 100%);
+            color: #e6f4f1;
             display: flex;
             flex-direction: column;
+            justify-content: space-between;
+            padding: 3rem 3.5rem;
+        }
+
+        .brand-mark {
+            display: flex;
             align-items: center;
-            gap: 2rem;
-            padding: 2rem;
-        }
-
-        .header {
-            text-align: center;
-            animation: fadeInUp 0.8s ease;
-        }
-
-        @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(30px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .header h1 {
-            font-size: 3rem;
+            gap: 0.7rem;
+            font-size: 1.25rem;
             font-weight: 800;
-            background: linear-gradient(135deg, #fff 0%, #fce7f3 50%, #f9a8d4 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            letter-spacing: -0.01em;
+            color: #ffffff;
+        }
+
+        .brand-mark .logo {
+            width: 2.4rem;
+            height: 2.4rem;
+            border-radius: 12px;
+            background: rgba(94, 234, 212, 0.14);
+            border: 1px solid rgba(94, 234, 212, 0.35);
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 0.75rem;
-            text-shadow: none;
-            filter: drop-shadow(0 2px 8px rgba(0,0,0,0.15));
-        }
-
-        .header h1 i {
-            -webkit-text-fill-color: #f9a8d4;
-            font-size: 2.5rem;
-            filter: drop-shadow(0 0 10px rgba(244, 114, 182, 0.5));
-        }
-
-        .header p {
             font-size: 1.1rem;
-            color: rgba(255, 255, 255, 0.75);
-            margin-top: 0.5rem;
-            font-weight: 300;
-            letter-spacing: 0.5px;
         }
 
-        /* Glassmorphism login card */
-        .login-card {
-            background: rgba(255, 255, 255, 0.12);
-            backdrop-filter: blur(20px) saturate(180%);
-            -webkit-backdrop-filter: blur(20px) saturate(180%);
-            border: 1px solid rgba(255, 255, 255, 0.25);
-            border-radius: 24px;
-            padding: 2.5rem;
-            width: 100%;
-            max-width: 420px;
-            box-shadow:
-                0 8px 32px rgba(31, 38, 135, 0.2),
-                inset 0 1px 0 rgba(255, 255, 255, 0.3);
-            animation: fadeInUp 1s ease 0.2s both;
+        .brand-hero h1 {
+            font-size: 2.1rem;
+            font-weight: 800;
+            line-height: 1.22;
+            letter-spacing: -0.02em;
+            color: #ffffff;
+            max-width: 30rem;
         }
+
+        .brand-hero h1 em {
+            font-style: normal;
+            color: var(--accent);
+        }
+
+        .brand-hero p {
+            margin-top: 1rem;
+            max-width: 26rem;
+            color: #b8d8d2;
+            font-size: 0.98rem;
+            line-height: 1.65;
+        }
+
+        .brand-points { list-style: none; display: grid; gap: 0.85rem; margin-top: 2rem; }
+
+        .brand-points li {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            color: #cfe6e2;
+            font-size: 0.92rem;
+            font-weight: 500;
+        }
+
+        .brand-points i {
+            width: 2rem;
+            height: 2rem;
+            border-radius: 9px;
+            background: rgba(255, 255, 255, 0.07);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            color: var(--accent);
+        }
+
+        .brand-foot { color: #8fb5af; font-size: 0.8rem; }
+
+        /* ── Form panel ──────────────────────────────────────────────── */
+        .form-panel {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2.5rem 1.5rem;
+        }
+
+        .login-card { width: 100%; max-width: 400px; }
 
         .login-card h2 {
-            text-align: center;
-            color: #fff;
             font-size: 1.5rem;
-            font-weight: 600;
-            margin-bottom: 2rem;
+            font-weight: 750;
+            letter-spacing: -0.02em;
         }
 
-        .form-group {
-            margin-bottom: 1.5rem;
+        .login-card .sub {
+            color: var(--ink-2);
+            font-size: 0.92rem;
+            margin: 0.45rem 0 1.9rem;
         }
+
+        .error-message {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
+            padding: 0.7rem 0.95rem;
+            border-radius: 10px;
+            font-size: 0.86rem;
+            font-weight: 500;
+            margin-bottom: 1.25rem;
+        }
+
+        .form-group { margin-bottom: 1.15rem; }
 
         .form-group label {
             display: block;
-            color: rgba(255, 255, 255, 0.8);
-            font-weight: 500;
-            font-size: 0.85rem;
-            margin-bottom: 0.5rem;
-            letter-spacing: 0.3px;
+            font-size: 0.84rem;
+            font-weight: 600;
+            margin-bottom: 0.4rem;
         }
 
-        .input-wrapper {
-            position: relative;
-        }
+        .input-wrapper { position: relative; }
 
-        .input-wrapper i {
+        .input-wrapper > i {
             position: absolute;
-            left: 14px;
+            left: 0.9rem;
             top: 50%;
             transform: translateY(-50%);
-            color: rgba(255, 255, 255, 0.4);
-            font-size: 0.9rem;
-            transition: color 0.3s;
+            color: var(--ink-3);
+            font-size: 0.85rem;
+            pointer-events: none;
         }
 
         .form-control {
             width: 100%;
-            padding: 0.9rem 1rem 0.9rem 2.5rem;
-            border-radius: 14px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            background: rgba(255, 255, 255, 0.08);
-            color: #fff;
+            padding: 0.72rem 0.9rem 0.72rem 2.5rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
             font-family: inherit;
             font-size: 0.95rem;
-            transition: all 0.3s;
-            box-sizing: border-box;
+            color: var(--ink);
+            background: var(--surface);
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
         }
 
-        .form-control::placeholder { color: rgba(255, 255, 255, 0.35); }
+        .form-control::placeholder { color: var(--ink-3); }
+
         .form-control:focus {
             outline: none;
-            border-color: var(--sakura-pink);
-            background: rgba(255, 255, 255, 0.15);
-            box-shadow: 0 0 0 3px rgba(244, 114, 182, 0.15);
-        }
-        .form-control:focus + i, .input-wrapper:hover i {
-            color: var(--sakura-pink);
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.14);
         }
 
         .btn-login {
             width: 100%;
-            padding: 1rem;
-            border: none;
-            border-radius: 14px;
-            font-family: inherit;
-            font-weight: 600;
-            font-size: 1rem;
-            cursor: pointer;
-            transition: all 0.3s;
-            background: linear-gradient(135deg, var(--sakura-pink), var(--sakura-deep));
-            color: #fff;
-            box-shadow: 0 4px 15px rgba(219, 39, 119, 0.3);
-            letter-spacing: 0.3px;
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 0.5rem;
+            gap: 0.55rem;
+            margin-top: 0.4rem;
+            padding: 0.78rem 1rem;
+            background: var(--primary);
+            color: #ffffff;
+            border: none;
+            border-radius: 10px;
+            font-family: inherit;
+            font-size: 0.95rem;
+            font-weight: 650;
+            cursor: pointer;
+            transition: background 0.15s ease;
         }
 
-        .btn-login:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(219, 39, 119, 0.4);
-            background: linear-gradient(135deg, var(--sakura-deep), #be185d);
+        .btn-login:hover { background: var(--primary-hover); }
+
+        .roles-note {
+            margin-top: 1.6rem;
+            padding-top: 1.3rem;
+            border-top: 1px solid var(--border);
+            color: var(--ink-2);
+            font-size: 0.82rem;
+            line-height: 1.6;
         }
 
-        .btn-login:active { transform: translateY(0); }
+        .roles-note .chips { display: flex; gap: 0.45rem; margin-top: 0.55rem; flex-wrap: wrap; }
 
-        .error-message {
-            background: rgba(239, 68, 68, 0.15);
-            border: 1px solid rgba(239, 68, 68, 0.3);
-            color: #fecaca;
-            padding: 0.85rem 1rem;
-            border-radius: 12px;
-            margin-bottom: 1.5rem;
-            font-size: 0.85rem;
-            text-align: center;
-            backdrop-filter: blur(10px);
-            animation: shake 0.5s ease;
-        }
-
-        @keyframes shake {
-            0%, 100% { transform: translateX(0); }
-            20%, 60% { transform: translateX(-5px); }
-            40%, 80% { transform: translateX(5px); }
-        }
-
-        .mock-creds {
-            margin-top: 2rem;
-            padding-top: 1.5rem;
-            border-top: 1px solid rgba(255, 255, 255, 0.12);
-            text-align: center;
-        }
-
-        .mock-creds strong {
-            color: rgba(255, 255, 255, 0.6);
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.28rem 0.7rem;
+            border-radius: 999px;
+            background: #f0fdfa;
+            border: 1px solid #99f6e4;
+            color: #115e59;
             font-size: 0.75rem;
-            text-transform: uppercase;
-            letter-spacing: 1px;
+            font-weight: 600;
         }
 
-        .creds-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 0.4rem;
-            margin-top: 0.75rem;
-            background: rgba(255, 255, 255, 0.06);
-            border-radius: 12px;
-            padding: 0.75rem;
-            font-size: 0.8rem;
-            color: rgba(255, 255, 255, 0.55);
-            text-align: left;
-        }
-
-        .creds-grid b { color: rgba(255, 255, 255, 0.8); }
-
-        /* Responsive */
-        @media (max-width: 480px) {
-            .header h1 { font-size: 2rem; }
-            .login-card { padding: 2rem 1.5rem; margin: 0 1rem; }
+        @media (max-width: 860px) {
+            body { flex-direction: column; }
+            .brand-panel { padding: 2rem 1.75rem; gap: 1.5rem; }
+            .brand-hero h1 { font-size: 1.5rem; }
+            .brand-points, .brand-foot { display: none; }
         }
     </style>
 </head>
 <body>
-    <!-- Mt Fuji silhouette -->
-    <div class="fuji-bg"></div>
-    <div class="fuji-snow"></div>
-
-    <!-- Cherry blossom petals (generated by JS) -->
-
-    <div class="login-wrapper">
-        <div class="header">
-            <h1>🌸 ArogyaMaa</h1>
-            <p>AI-Supported Rural Maternal Healthcare</p>
+    <aside class="brand-panel">
+        <div class="brand-mark">
+            <span class="logo"><i class="fa-solid fa-hand-holding-heart"></i></span>
+            ArogyaMaa
         </div>
 
+        <div class="brand-hero">
+            <h1>Safer pregnancies for rural India, powered by <em>AI + ASHA workers</em>.</h1>
+            <p>
+                A maternal-health platform connecting mothers, ASHA field workers, and doctors —
+                with AI risk assessment, a voice-first Telegram assistant, and offline-ready field capture.
+            </p>
+            <ul class="brand-points">
+                <li><i class="fa-solid fa-robot"></i> Multi-agent AI risk analysis on every assessment</li>
+                <li><i class="fa-solid fa-microphone-lines"></i> Voice registration &amp; appointments in Hindi, Marathi &amp; English</li>
+                <li><i class="fa-solid fa-wifi"></i> Works offline in the field — syncs when connectivity returns</li>
+            </ul>
+        </div>
+
+        <div class="brand-foot">ArogyaMaa · AI-supported rural maternal healthcare</div>
+    </aside>
+
+    <main class="form-panel">
         <div class="login-card">
-            <h2><i class="fa-solid fa-shield-halved"></i> Secure Login</h2>
+            <h2>Welcome back</h2>
+            <p class="sub">Sign in to your care dashboard.</p>
 
             {% if error %}
             <div class="error-message">
@@ -310,50 +284,35 @@
                 <div class="form-group">
                     <label for="username">Username</label>
                     <div class="input-wrapper">
-                        <input type="text" id="username" name="username" class="form-control" placeholder="Enter your username" required autocomplete="username">
                         <i class="fa-solid fa-user"></i>
+                        <input type="text" id="username" name="username" class="form-control"
+                               placeholder="Enter your username" required autocomplete="username" autofocus>
                     </div>
                 </div>
 
                 <div class="form-group">
                     <label for="password">Password</label>
                     <div class="input-wrapper">
-                        <input type="password" id="password" name="password" class="form-control" placeholder="Enter your password" required autocomplete="current-password">
                         <i class="fa-solid fa-lock"></i>
+                        <input type="password" id="password" name="password" class="form-control"
+                               placeholder="Enter your password" required autocomplete="current-password">
                     </div>
                 </div>
 
                 <button type="submit" class="btn-login">
-                    Secure Login <i class="fa-solid fa-arrow-right-to-bracket"></i>
+                    Sign in <i class="fa-solid fa-arrow-right"></i>
                 </button>
             </form>
 
-            <div class="mock-creds">
-                <strong>Evaluator Credentials</strong>
-                <div class="creds-grid">
-                    <div>Admin: <b>admin</b></div><div>admin123</div>
-                    <div>Doctor: <b>doctor</b></div><div>pass123</div>
-                    <div>ASHA: <b>asha</b></div><div>pass123</div>
+            <div class="roles-note">
+                One login for every role — you'll land on the right dashboard automatically.
+                <div class="chips">
+                    <span class="chip"><i class="fa-solid fa-user-shield"></i> Admin</span>
+                    <span class="chip"><i class="fa-solid fa-user-doctor"></i> Doctor</span>
+                    <span class="chip"><i class="fa-solid fa-person-dress"></i> ASHA Worker</span>
                 </div>
             </div>
         </div>
-    </div>
-
-    <script>
-        // Generate cherry blossom petals
-        (function() {
-            const count = 25;
-            for (let i = 0; i < count; i++) {
-                const petal = document.createElement('div');
-                petal.className = 'petal';
-                petal.style.left = Math.random() * 100 + 'vw';
-                petal.style.animationDuration = (6 + Math.random() * 8) + 's';
-                petal.style.animationDelay = (Math.random() * 12) + 's';
-                petal.style.width = (8 + Math.random() * 10) + 'px';
-                petal.style.height = petal.style.width;
-                document.body.appendChild(petal);
-            }
-        })();
-    </script>
+    </main>
 </body>
 </html>

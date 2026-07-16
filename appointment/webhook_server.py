@@ -23,12 +23,20 @@ appt_flask_app = Flask(__name__)
 
 # Reference to the running Telegram bot application (set from run_telegram_bot.py)
 _bot_app_ref = None
+# The bot's asyncio event loop, captured at startup via post_init (set_bot_loop).
+_bot_loop = None
 
 
 def set_bot_app(bot_app):
     """Called from main to inject the running bot application."""
     global _bot_app_ref
     _bot_app_ref = bot_app
+
+
+def set_bot_loop(loop):
+    """Called from the bot's post_init hook with its running event loop."""
+    global _bot_loop
+    _bot_loop = loop
 
 
 # ── Inline HTML templates ─────────────────────────────────────────────────────
@@ -240,30 +248,39 @@ def _notify_patient_rescheduled(appointment: dict):
 
 
 def _send_text_to_patient(chat_id, text: str):
-    """Send a text message to patient from webhook context (sync → async bridge)."""
-    if not _bot_app_ref:
+    """
+    Send a text message to the patient from the webhook's Flask thread.
+
+    Primary path: schedule the send on the bot's own event loop (captured at
+    startup via set_bot_loop) — the PTB httpx client is bound to that loop.
+    Fallback: a plain synchronous HTTP call to the Telegram Bot API, which
+    needs no event loop at all.
+    """
+    if _bot_loop is not None and _bot_app_ref is not None:
+        try:
+            future = asyncio.run_coroutine_threadsafe(
+                _bot_app_ref.bot.send_message(chat_id=int(chat_id), text=text),
+                _bot_loop,
+            )
+            future.result(timeout=15)
+            return
+        except Exception as e:
+            logger.error(f"[Appointment Webhook] Loop send failed for {chat_id}: {e}; trying HTTP fallback")
+
+    # Fallback: direct HTTP call (no asyncio involved).
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    if not token:
+        logger.error("[Appointment Webhook] No bot loop and no TELEGRAM_BOT_TOKEN — cannot notify patient")
         return
     try:
-        loop = None
-        if hasattr(_bot_app_ref, 'updater') and _bot_app_ref.updater:
-            loop = getattr(_bot_app_ref.updater, '_loop', None)
-
-        if loop is None:
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                loop.run_until_complete(
-                    _bot_app_ref.bot.send_message(chat_id=int(chat_id), text=text)
-                )
-                return
-
-        future = asyncio.run_coroutine_threadsafe(
-            _bot_app_ref.bot.send_message(chat_id=int(chat_id), text=text),
-            loop,
+        import httpx
+        resp = httpx.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={"chat_id": int(chat_id), "text": text},
+            timeout=15,
         )
-        future.result(timeout=15)
+        if resp.status_code != 200:
+            logger.error(f"[Appointment Webhook] HTTP fallback failed for {chat_id}: {resp.text[:200]}")
     except Exception as e:
         logger.error(f"[Appointment Webhook] Failed to send message to {chat_id}: {e}")
 

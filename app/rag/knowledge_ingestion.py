@@ -18,7 +18,7 @@ import hashlib
 
 # PDF Processing
 from langchain_community.document_loaders import PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # Vector Store
 from langchain_community.vectorstores import Chroma
@@ -344,17 +344,18 @@ if __name__ == "__main__":
     # Run ingestion
     success = ingestion.ingest_all_documents()
     
+    # NOTE: ASCII-only prints — Windows consoles default to cp1252.
     if success:
         print("\n" + "=" * 70)
-        print("✅ INGESTION COMPLETE")
+        print("INGESTION COMPLETE")
         print("=" * 70)
-        
+
         stats = ingestion.get_stats()
-        print(f"\n📊 Knowledge Base Stats:")
+        print("\nKnowledge Base Stats:")
         print(f"  Total Chunks: {stats['total_chunks']}")
         print(f"  Embedding Model: {stats['embedding_model']}")
         print(f"  Sources: {len(stats['sources'])} PDFs")
         print("\nVector database ready for ASHA RAG queries!")
     else:
-        print("\n❌ INGESTION FAILED")
+        print("\nINGESTION FAILED")
         print("Check logs above for errors.")

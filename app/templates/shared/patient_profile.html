@@ -31,7 +31,7 @@
 <div style="display:grid; grid-template-columns: 2fr 1.2fr; gap:1.5rem; margin-bottom:1.5rem;">
     <!-- Profile Header -->
     <div class="glass-card" style="display:flex; gap:2.5rem; align-items:center; padding: 2.5rem;">
-        <div style="width:130px; height:130px; background:linear-gradient(135deg, var(--sakura-pink), var(--sakura-deep)); border-radius:35px; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:3.5rem; color:white; box-shadow: 0 15px 30px rgba(244, 114, 182, 0.3);">
+        <div style="width:130px; height:130px; background:linear-gradient(135deg, var(--sakura-pink), var(--sakura-deep)); border-radius:35px; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:3.5rem; color:white; box-shadow: 0 15px 30px rgba(15, 118, 110, 0.25);">
             {{ patient.full_name[0] if patient.full_name else 'M' }}
         </div>
         <div style="flex:1;">
@@ -152,7 +152,7 @@
     <div style="display:flex; flex-direction:column; gap:1.5rem;">
         
         <!-- AI SUMMARY CARD -->
-        <div class="glass-card" style="background: linear-gradient(135deg, rgba(255,255,255,0.9), rgba(252, 231, 243, 0.5)); border: 2px solid var(--sakura-pink);">
+        <div class="glass-card" style="background: linear-gradient(135deg, rgba(255,255,255,0.92), rgba(240, 253, 250, 0.6)); border: 1px solid var(--primary-soft-border);">
             <h3 style="margin-top:0; color:var(--sakura-deep); display:flex; align-items:center; gap:0.5rem;">
                 <i class="fa-solid fa-microchip-ai"></i> AI Summary
             </h3>
@@ -218,15 +218,16 @@
             datasets: [{
                 label: 'Risk Score History',
                 data: {{ graph_scores | tojson }},
-                borderColor: '#f472b6',
-                borderWidth: 3,
-                backgroundColor: 'rgba(244, 114, 182, 0.1)',
+                borderColor: '#0f766e',
+                borderWidth: 2,
+                backgroundColor: 'rgba(15, 118, 110, 0.08)',
                 fill: true,
-                tension: 0.4,
-                pointRadius: 6,
-                pointBackgroundColor: '#f472b6',
+                tension: 0.35,
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                pointBackgroundColor: '#0f766e',
                 pointBorderColor: '#fff',
-                pointBorderWidth: 2
+                pointBorderWidth: 1.5
             }]
         },
         options: {

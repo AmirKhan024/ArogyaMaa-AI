@@ -76,12 +76,12 @@ def stats():
 @asha_dashboard_bp.route('/documents')
 def view_documents():
     """View medical documents for a mother"""
-    asha_id = request.args.get('asha_id', '')
+    asha_id = request.args.get('asha_id') or session.get('asha_id', '')
     mother_id = request.args.get('mother_id', '')
-    
+
     # Get ASHA name
-    asha_name = ''
-    if asha_id:
+    asha_name = session.get('display_name', '')
+    if asha_id and not asha_name:
         asha = asha_repo.get_by_id(asha_id)
         if asha:
             asha_name = asha.get('name', '')
@@ -112,11 +112,11 @@ def notifications():
 @asha_dashboard_bp.route('/ai-assistant')
 def rag_chatbot():
     """ASHA RAG AI Assistant chatbot interface"""
-    asha_id = request.args.get('asha_id', '')
-    
+    asha_id = request.args.get('asha_id') or session.get('asha_id', '')
+
     # Get ASHA name
-    asha_name = ''
-    if asha_id:
+    asha_name = session.get('display_name', '')
+    if asha_id and not asha_name:
         asha = asha_repo.get_by_id(asha_id)
         if asha:
             asha_name = asha.get('name', '')

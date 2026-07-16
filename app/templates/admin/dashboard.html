@@ -172,8 +172,11 @@ function updateRiskPieChart(riskDistribution) {
         riskPieChart.destroy();
     }
     
+    // Status palette from the design system (risk = state, not series identity)
+    const vizStatus = ['#0ca30c', '#fab219', '#ec835a', '#d03b3b'];
+
     riskPieChart = new Chart(ctx, {
-        type: 'pie',
+        type: 'doughnut',
         data: {
             labels: ['Low Risk', 'Moderate Risk', 'High Risk', 'Critical Risk'],
             datasets: [{
@@ -183,20 +186,20 @@ function updateRiskPieChart(riskDistribution) {
                     riskDistribution.HIGH || 0,
                     riskDistribution.CRITICAL || 0
                 ],
-                backgroundColor: [
-                    '#4ade80',
-                    '#fbbf24',
-                    '#f97316',
-                    '#dc2626'
-                ]
+                backgroundColor: vizStatus,
+                borderColor: '#ffffff',
+                borderWidth: 2,
+                hoverOffset: 6
             }]
         },
         options: {
             responsive: true,
-            maintainAspectRatio: true,
+            maintainAspectRatio: false,
+            cutout: '62%',
             plugins: {
                 legend: {
-                    position: 'bottom'
+                    position: 'bottom',
+                    labels: { usePointStyle: true, pointStyle: 'circle', boxWidth: 8, padding: 16 }
                 }
             }
         }
@@ -211,59 +214,55 @@ function updateRiskTrendChart(trendData) {
         riskTrendChart.destroy();
     }
     
+    const trendSeries = [
+        { label: 'Low Risk',      key: 'low',      color: '#0ca30c' },
+        { label: 'Moderate Risk', key: 'moderate', color: '#fab219' },
+        { label: 'High Risk',     key: 'high',     color: '#ec835a' },
+        { label: 'Critical Risk', key: 'critical', color: '#d03b3b' }
+    ];
+
     riskTrendChart = new Chart(ctx, {
         type: 'line',
         data: {
             labels: trendData.map(d => d.date),
-            datasets: [
-                {
-                    label: 'Low Risk',
-                    data: trendData.map(d => d.low),
-                    borderColor: '#4ade80',
-                    backgroundColor: '#4ade8020',
-                    fill: true
-                },
-                {
-                    label: 'Moderate Risk',
-                    data: trendData.map(d => d.moderate),
-                    borderColor: '#fbbf24',
-                    backgroundColor: '#fbbf2420',
-                    fill: true
-                },
-                {
-                    label: 'High Risk',
-                    data: trendData.map(d => d.high),
-                    borderColor: '#f97316',
-                    backgroundColor: '#f9731620',
-                    fill: true
-                },
-                {
-                    label: 'Critical Risk',
-                    data: trendData.map(d => d.critical),
-                    borderColor: '#dc2626',
-                    backgroundColor: '#dc262620',
-                    fill: true
-                }
-            ]
+            datasets: trendSeries.map(s => ({
+                label: s.label,
+                data: trendData.map(d => d[s.key]),
+                borderColor: s.color,
+                backgroundColor: s.color,
+                borderWidth: 2,
+                pointRadius: 3,
+                pointHoverRadius: 5,
+                pointBackgroundColor: s.color,
+                pointBorderColor: '#ffffff',
+                pointBorderWidth: 1.5,
+                tension: 0.3,
+                fill: false
+            }))
         },
         options: {
             responsive: true,
-            maintainAspectRatio: true,
+            maintainAspectRatio: false,
             interaction: {
                 mode: 'index',
                 intersect: false
             },
             plugins: {
                 legend: {
-                    position: 'bottom'
+                    position: 'bottom',
+                    labels: { usePointStyle: true, pointStyle: 'circle', boxWidth: 8, padding: 16 }
                 }
             },
             scales: {
                 y: {
                     beginAtZero: true,
-                    ticks: {
-                        stepSize: 1
-                    }
+                    ticks: { stepSize: 1, color: '#898781' },
+                    grid: { color: '#e7e5de' },
+                    border: { display: false }
+                },
+                x: {
+                    ticks: { color: '#898781' },
+                    grid: { display: false }
                 }
             }
         }

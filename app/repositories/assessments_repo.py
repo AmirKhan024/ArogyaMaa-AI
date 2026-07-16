@@ -85,6 +85,17 @@ def _find_by_client_uuid(client_uuid):
     return str(row["id"]) if row else None
 
 
+def find_id_by_client_uuid(client_uuid):
+    """
+    Public lookup for offline-replay dedup: id (str) of the assessment already
+    ingested with this client_uuid, or None. Lets callers skip side effects
+    (AI evaluation, alerts) when a replayed capture was already processed.
+    """
+    if not client_uuid:
+        return None
+    return _find_by_client_uuid(client_uuid)
+
+
 def get_by_id(assessment_id):
     return fetch_one("select * from assessments where id = cast(:id as uuid)", {"id": str(assessment_id)})
 

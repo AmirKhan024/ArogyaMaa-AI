@@ -12,10 +12,16 @@ Features:
 import os
 import sys
 if sys.platform == 'win32':
-    import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+    # cp1252 console can't print emoji/Devanagari; reconfigure in place so the
+    # streams keep working under pytest capture and other wrappers.
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding='utf-8')
+        except (AttributeError, ValueError):
+            pass
+import asyncio
 import logging
+import shutil
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
@@ -89,8 +95,34 @@ try:
 except Exception as e:
     logger.error(f"❌ AI Registration Engine init failed: {e}")
 
-# Ensure tmp directory exists for voice processing
-os.makedirs('tmp', exist_ok=True)
+# Ensure tmp directory exists for voice processing (anchored to the repo root,
+# not the process CWD, so the bot works no matter where it is launched from).
+TMP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tmp')
+os.makedirs(TMP_DIR, exist_ok=True)
+
+
+def _lang_code(preferred_language) -> str | None:
+    """Map a stored preferred_language value to a Whisper ISO-639-1 hint."""
+    lang = str(preferred_language or '').lower()
+    if 'english' in lang or lang in ('en', 'eng'):
+        return 'en'
+    if 'marathi' in lang or 'मराठी' in lang:
+        return 'mr'
+    if 'hindi' in lang or 'हिंदी' in lang or 'हिन्दी' in lang:
+        return 'hi'
+    return None  # let Whisper auto-detect
+
+
+def _fmt_ts(value, fmt='%b %d, %H:%M', default='recently'):
+    """Format a timestamp that may be a datetime, an ISO string (JSONB), or None."""
+    if hasattr(value, 'strftime'):
+        return value.strftime(fmt)
+    if isinstance(value, str) and value:
+        try:
+            return datetime.fromisoformat(value.replace('Z', '+00:00')).strftime(fmt)
+        except ValueError:
+            return value[:16]
+    return default
 
 
 # ==================== VOICE HELPER ====================
@@ -150,7 +182,7 @@ def get_main_menu_keyboard():
 # ==================== /start COMMAND ====================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /start command - Always show main menu with 6 buttons."""
+    """Handle /start command - always show the main menu."""
     chat_id = update.effective_chat.id
     user = update.effective_user
 
@@ -435,8 +467,8 @@ async def show_messages(chat_id, query):
         for msg in recent_messages:
             sender = msg.get('sender_name', 'Healthcare Team')
             content = msg.get('content', '')
-            timestamp = msg.get('timestamp', datetime.now(timezone.utc))
-            message += f"*{sender}* ({timestamp.strftime('%b %d, %H:%M')})\n{content}\n\n"
+            # timestamp may be a datetime or an ISO string (JSONB round-trip)
+            message += f"*{sender}* ({_fmt_ts(msg.get('timestamp'))})\n{content}\n\n"
         message += "Use /start to return to the main menu."
 
     await query.edit_message_text(message, parse_mode='Markdown')
@@ -526,9 +558,13 @@ async def handle_registration_input(update: Update, context: ContextTypes.DEFAUL
             return True
         try:
             voice_file = await context.bot.get_file(update.message.voice.file_id)
-            ogg_path = f"tmp/{update.message.voice.file_id}.ogg"
+            ogg_path = os.path.join(TMP_DIR, f"{update.message.voice.file_id}.ogg")
             await voice_file.download_to_drive(ogg_path)
-            text_content = voice_processor.audio_to_text(ogg_path)
+            # Sync Groq call — run off the event loop; honor the mother's language.
+            text_content = await asyncio.to_thread(
+                voice_processor.audio_to_text, ogg_path,
+                _lang_code(session.get('preferred_language')),
+            )
             if os.path.exists(ogg_path):
                 os.remove(ogg_path)
             if not text_content or text_content.startswith("Could not"):
@@ -642,7 +678,7 @@ LATEST HEALTH DATA:
 - BP: {vitals.get('bp_systolic', 'N/A')}/{vitals.get('bp_diastolic', 'N/A')} mmHg
 - Hemoglobin: {vitals.get('hemoglobin', 'N/A')} g/dL
 - Weight: {vitals.get('weight', 'N/A')} kg
-- Risk Level: {ai_eval.get('risk_level', 'UNKNOWN')}
+- Risk Level: {ai_eval.get('risk_category', 'UNKNOWN')}
 """
 
         prompt = f"""You are a maternal nutrition AI assistant for a pregnant woman in India.
@@ -765,6 +801,13 @@ def main():
         logger.info("AI Registration Engine ready")
     if voice_processor:
         logger.info("Voice Processor ready (STT + TTS)")
+    if shutil.which('ffmpeg'):
+        logger.info("ffmpeg found - voice replies (TTS) enabled")
+    else:
+        logger.warning(
+            "*** ffmpeg NOT FOUND on PATH - TTS voice replies will silently fall back "
+            "to text! Install ffmpeg (https://ffmpeg.org) to enable voice notes. ***"
+        )
     logger.info("Starting Telegram bot...")
     logger.info("Bot is running! Press Ctrl+C to stop.")
 
@@ -788,10 +831,17 @@ def main():
             "(e.g. HTTPS_PROXY=http://127.0.0.1:1080). Will keep retrying..."
         )
 
+    # Capture the bot's event loop once it is running, so the appointment webhook
+    # thread can schedule patient notifications onto it safely.
+    async def _post_init(application):
+        from appointment.webhook_server import set_bot_loop
+        set_bot_loop(asyncio.get_running_loop())
+
     # Create application with increased timeouts for flaky networks
     builder = (
         Application.builder()
         .token(BOT_TOKEN)
+        .post_init(_post_init)
         .read_timeout(30)
         .write_timeout(30)
         .connect_timeout(30)
@@ -824,6 +874,10 @@ def main():
         handle_message
     ))
 
+    # Documents & photos (lab reports, scans, prescriptions)
+    from app.bot.documents import handle_document_message
+    app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_document_message))
+
     # Error handler for network issues
     async def error_handler(update, context):
         """Handle errors gracefully - especially transient network issues."""
@@ -844,8 +898,6 @@ def main():
     try:
         import threading
         from appointment.webhook_server import run_appointment_webhook, set_bot_app as set_appt_bot
-        from appointment.excel_manager import _ensure_workbook_exists
-        _ensure_workbook_exists()  # Create Excel file if it doesn't exist
         set_appt_bot(app)  # Inject bot reference for Telegram notifications
         appt_thread = threading.Thread(target=run_appointment_webhook, daemon=True)
         appt_thread.start()

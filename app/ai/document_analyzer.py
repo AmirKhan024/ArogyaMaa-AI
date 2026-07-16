@@ -14,6 +14,45 @@ import json
 
 logger = logging.getLogger(__name__)
 
+# Groq vision model for reading text out of document photos when OCR is not
+# installed. Model ids rotate — override with GROQ_VISION_MODEL if retired
+# (check console.groq.com/docs/models).
+VISION_MODEL = os.getenv("GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
+
+
+def _vision_extract_text(client, image_path: str) -> str:
+    """Read the text content of a document image via a Groq vision model."""
+    try:
+        with open(image_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
+        ext = os.path.splitext(image_path)[1].lstrip(".").lower() or "jpeg"
+        if ext == "jpg":
+            ext = "jpeg"
+        response = client.chat.completions.create(
+            model=VISION_MODEL,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": (
+                        "Transcribe ALL text visible in this medical document image, exactly as written. "
+                        "Include test names, values, units and reference ranges. "
+                        "If the image contains no readable text, reply with exactly: NO_TEXT"
+                    )},
+                    {"type": "image_url", "image_url": {"url": f"data:image/{ext};base64,{b64}"}},
+                ],
+            }],
+            temperature=0.0,
+            max_tokens=2000,
+        )
+        text = (response.choices[0].message.content or "").strip()
+        if not text or "NO_TEXT" in text[:40]:
+            return ""
+        logger.info(f"[DOCUMENT ANALYZER] Vision extracted {len(text)} characters")
+        return text
+    except Exception as e:
+        logger.error(f"[DOCUMENT ANALYZER] Vision extraction failed: {e}")
+        return ""
+
 
 def analyze_medical_document(image_path: str, document_type: str, description: str = "") -> Dict:
     """
@@ -37,6 +76,7 @@ def analyze_medical_document(image_path: str, document_type: str, description: s
         api_key = os.getenv('GROQ_API_KEY')
         if not api_key:
             return {
+                "success": False,
                 "error": "GROQ_API_KEY not configured",
                 "key_findings": [],
                 "abnormal_values": [],
@@ -45,26 +85,42 @@ def analyze_medical_document(image_path: str, document_type: str, description: s
                 "extracted_text": ""
             }
         
-        # First, try to use pytesseract for OCR if available
-        extracted_text = ""
-        try:
-            import pytesseract
-            from PIL import Image
-            img = Image.open(image_path)
-            extracted_text = pytesseract.image_to_string(img)
-            logger.info(f"[DOCUMENT ANALYZER] OCR extracted {len(extracted_text)} characters")
-        except Exception as ocr_error:
-            logger.error(f"[DOCUMENT ANALYZER] OCR failed, will use AI-only analysis: {ocr_error}")
-            # If OCR fails, create a sample analysis template
-            extracted_text = f"""Unable to extract text from image (OCR not available).
-
-Document Type: {document_type.replace('_', ' ').title()}
-Description: {description if description else 'No description provided'}
-
-IMPORTANT: Since OCR is unavailable, please provide a SAMPLE analysis for a typical {document_type.replace('_', ' ')} 
-relevant to maternal health. Include common parameters and normal/abnormal value examples."""
-        
         client = Groq(api_key=api_key)
+
+        # Extract document text: PDF text layer -> OCR -> Groq vision (images).
+        # NEVER fabricate findings — if nothing can be read, fail honestly.
+        extracted_text = ""
+        is_pdf = str(image_path).lower().endswith(".pdf")
+
+        if is_pdf:
+            try:
+                import pdfplumber
+                with pdfplumber.open(image_path) as pdf:
+                    extracted_text = "\n".join((page.extract_text() or "") for page in pdf.pages).strip()
+                logger.info(f"[DOCUMENT ANALYZER] PDF text layer: {len(extracted_text)} characters")
+            except Exception as pdf_error:
+                logger.error(f"[DOCUMENT ANALYZER] PDF extraction failed: {pdf_error}")
+        else:
+            try:
+                import pytesseract
+                from PIL import Image
+                img = Image.open(image_path)
+                extracted_text = (pytesseract.image_to_string(img) or "").strip()
+                logger.info(f"[DOCUMENT ANALYZER] OCR extracted {len(extracted_text)} characters")
+            except Exception as ocr_error:
+                logger.info(f"[DOCUMENT ANALYZER] OCR unavailable ({ocr_error}); trying Groq vision")
+                extracted_text = _vision_extract_text(client, image_path)
+
+        if not extracted_text:
+            return {
+                "success": False,
+                "error": "Could not read any text from the document",
+                "key_findings": [],
+                "abnormal_values": [],
+                "clinical_summary": "The document could not be read automatically. Manual review required.",
+                "recommendations": ["Ask the healthcare team to review the original document"],
+                "extracted_text": ""
+            }
         
         # Create analysis prompt based on document type with extracted text
         prompt_prefix = f"Analyze this {document_type.replace('_', ' ')} based on the extracted text below.\n\n"
@@ -194,12 +250,14 @@ Return ONLY a valid JSON object:
         analysis.setdefault('clinical_summary', 'Analysis completed')
         analysis.setdefault('recommendations', [])
         analysis['extracted_text'] = extracted_text  # Add the OCR text
-        
+        analysis['success'] = True
+
         return analysis
-    
+
     except Exception as e:
         logger.error(f"[DOCUMENT ANALYZER] Error: {e}")
         return {
+            "success": False,
             "error": str(e),
             "key_findings": [],
             "abnormal_values": [],

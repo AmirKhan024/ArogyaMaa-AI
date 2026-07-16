@@ -2,24 +2,20 @@
 Email sender for appointment notifications.
 
 Sends an HTML email to the doctor with appointment details
-and Confirm / Reschedule action buttons.
-
-Adapted from voice_appointment_bot/email_module/sender.py.
+and Confirm / Reschedule action buttons, via the shared Brevo
+SMTP service (app/services/email_service.py).
 """
 
-import smtplib
 import os
 import logging
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from jinja2 import Environment, FileSystemLoader
 from dotenv import load_dotenv
+
+from app.services import email_service
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-GMAIL_SENDER = os.getenv("GMAIL_SENDER_EMAIL")
-GMAIL_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 DOCTOR_EMAIL = os.getenv("DOCTOR_EMAIL")
 DOCTOR_NAME = os.getenv("DOCTOR_NAME", "Doctor")
 WEBHOOK_BASE_URL = os.getenv("WEBHOOK_BASE_URL", "http://localhost:5050")
@@ -37,11 +33,11 @@ def send_doctor_email(appointment: dict) -> None:
         appointment: Full appointment dict
 
     Raises:
-        smtplib.SMTPException: If sending fails
         ValueError: If required env vars are missing
+        RuntimeError: If the SMTP send fails
     """
-    if not GMAIL_SENDER or not GMAIL_PASSWORD:
-        raise ValueError("GMAIL_SENDER_EMAIL and GMAIL_APP_PASSWORD must be set in .env")
+    if not email_service.is_configured():
+        raise ValueError("Brevo SMTP is not configured (BREVO_SMTP_LOGIN / BREVO_SMTP_KEY / EMAIL_FROM)")
 
     if not DOCTOR_EMAIL:
         raise ValueError("DOCTOR_EMAIL must be set in .env")
@@ -67,16 +63,11 @@ def send_doctor_email(appointment: dict) -> None:
         reschedule_url=reschedule_url,
     )
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = (
+    subject = (
         f"[नया अपॉइंटमेंट] {appointment['patient_name']} — "
         f"{appointment['preferred_date']} {appointment['preferred_time']}"
     )
-    msg["From"] = GMAIL_SENDER
-    msg["To"] = DOCTOR_EMAIL
-    msg.attach(MIMEText(html_body, "html", "utf-8"))
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-        server.login(GMAIL_SENDER, GMAIL_PASSWORD)
-        server.sendmail(GMAIL_SENDER, DOCTOR_EMAIL, msg.as_string())
-        logger.info(f"[Appointment Email] Sent to {DOCTOR_EMAIL}")
+    if not email_service.send_email(DOCTOR_EMAIL, subject, html_body):
+        raise RuntimeError(f"Failed to send appointment email to {DOCTOR_EMAIL}")
+    logger.info(f"[Appointment Email] Sent to {DOCTOR_EMAIL}")

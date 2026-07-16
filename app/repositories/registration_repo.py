@@ -11,6 +11,20 @@ from app.repositories._sql import exec_write, fetch_one, utcnow
 from app.db import to_jsonb
 
 
+def _age_from_dob(dob_text):
+    """Compute age in years from a free-form date-of-birth string, or None."""
+    try:
+        import dateparser
+        born = dateparser.parse(str(dob_text), settings={"DATE_ORDER": "DMY"})
+        if not born:
+            return None
+        today = utcnow()
+        age = today.year - born.year - ((today.month, today.day) < (born.month, born.day))
+        return age if 5 <= age <= 70 else None
+    except Exception:
+        return None
+
+
 def get_session(telegram_chat_id):
     """Return the in-progress registration session data (dict) or None."""
     row = fetch_one(
@@ -65,6 +79,12 @@ def finalize_registration(telegram_chat_id):
         update_data["name"] = session["full_name"]
     if session.get("age"):
         update_data["age"] = session["age"]
+    elif session.get("dob"):
+        # The LLM doesn't always derive age from dob — compute it deterministically
+        # so downstream checks (e.g. appointment pre-fill) don't fail on age=None.
+        derived_age = _age_from_dob(session["dob"])
+        if derived_age is not None:
+            update_data["age"] = derived_age
     if session.get("phone_number"):
         update_data["phone"] = session["phone_number"]
     if session.get("location"):

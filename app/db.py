@@ -52,12 +52,17 @@ def init_db(app=None) -> Engine:
 
     if _engine is None:
         url = _resolve_database_url(app)
+        # prepare_threshold=None disables psycopg3 server-side prepared statements.
+        # Required with Supabase's transaction-mode pooler (PgBouncer, port 6543):
+        # pooled server connections are shared across clients, so named prepared
+        # statements collide with "DuplicatePreparedStatement" errors.
         _engine = create_engine(
             url,
             pool_pre_ping=True,
             pool_size=5,
             max_overflow=5,
             future=True,
+            connect_args={"prepare_threshold": None},
         )
         # Smoke-test the connection so failures surface at startup, not first query.
         with _engine.connect() as conn:

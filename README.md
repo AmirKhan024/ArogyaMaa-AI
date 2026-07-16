@@ -309,9 +309,12 @@ The real system — the one that could run in every Primary Health Centre in Ind
 
 ### Prerequisites
 - Python 3.11+
+- **ffmpeg** on PATH (voice-note conversion for TTS replies)
 - A **Supabase** project (free) — or any Postgres — for `DATABASE_URL`
 - Groq API key ([free at groq.com](https://groq.com)) — the only AI key needed
 - Telegram Bot token ([via @BotFather](https://t.me/BotFather))
+- Brevo SMTP credentials (free at [brevo.com](https://www.brevo.com)) — for the doctor
+  appointment confirm/reschedule emails (optional; everything else works without email)
 
 ### Setup
 ```bash
@@ -321,19 +324,24 @@ python -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activa
 pip install -r requirements.txt
 cp .env.example .env
 # Fill in: SECRET_KEY, DATABASE_URL, GROQ_API_KEY, TELEGRAM_BOT_TOKEN, INTERNAL_API_TOKEN
+#          + BREVO_SMTP_LOGIN / BREVO_SMTP_KEY / EMAIL_FROM / DOCTOR_EMAIL for email
 #   SECRET_KEY:         python -c "import secrets;print(secrets.token_hex(32))"
-#   DATABASE_URL:       Supabase → Project Settings → Database → Connection string → URI (pooler, port 6543)
+#   DATABASE_URL:       postgresql+psycopg://...pooler.supabase.com:6543/postgres  (transaction pooler)
 #   INTERNAL_API_TOKEN: any random hex (used for bot → API server-to-server calls)
 
-psql "$DATABASE_URL" -f db/schema.sql   # or paste db/schema.sql into the Supabase SQL editor
-python db/seed.py                       # seeds demo doctor/asha/mothers; prints credentials
-python app/rag/knowledge_ingestion.py   # build the local RAG vector DB (first run only)
+psql "$DATABASE_URL" -f db/schema.sql     # or paste db/schema.sql into the Supabase SQL editor
+python db/seed.py                         # seeds demo doctor/asha/mothers; prints credentials
+python -m app.rag.knowledge_ingestion     # build the local RAG vector DB (first run only)
 
 python run.py                           # Flask web server  → http://localhost:8000
 python run_telegram_bot.py              # Telegram bot (separate terminal)
 ```
 
 Demo credentials after seeding: `doctor / doctor123`, `asha / asha123` (admin via `ADMIN_PASSWORD` in dev). Dashboards open at `http://localhost:8000`.
+
+**Verify everything:** `python -m pytest tests/ -q` (unit + DB), `python -m pytest e2e/ -q`
+(browser offline-PWA flow, needs the server running), `python scripts/send_test_email.py`
+(Brevo smoke). A guided demo script lives in [`DEMO_CHECKLIST.md`](DEMO_CHECKLIST.md).
 
 ### Run with Docker
 ```bash
