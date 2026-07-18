@@ -19,6 +19,15 @@ pytestmark = pytest.mark.skipif(
 def _db():
     from app.db import init_db
     init_db()
+    yield
+    # Hard-delete the rows this module created (telegram_chat_id 'test_...') so
+    # repeated test runs don't pollute the demo database with junk mothers.
+    from app.repositories._sql import exec_write
+    exec_write(
+        "delete from assessments where mother_id in "
+        "(select id from mothers where telegram_chat_id like 'test\\_%')", {}
+    )
+    exec_write("delete from mothers where telegram_chat_id like 'test\\_%'", {})
 
 
 def test_mother_create_and_id_alias():

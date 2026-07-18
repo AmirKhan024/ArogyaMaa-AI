@@ -196,7 +196,7 @@ async function loadRecentAssessments() {
             const riskLevel = assessment.ai_evaluation?.risk_category || 'N/A';
             const riskClass = getRiskClass(riskLevel);
             const riskBadge = `<span class="badge badge-${riskClass}">${riskLevel}</span>`;
-            const aiScore = assessment.ai_evaluation?.risk_score ? `${assessment.ai_evaluation.risk_score}/100` : 'N/A';
+            const aiScore = assessment.ai_evaluation?.risk_score != null ? `${assessment.ai_evaluation.risk_score}/100` : 'N/A';
             const statusBadge = assessment.doctor_reviewed 
                 ? '<span class="badge badge-success">Reviewed</span>'
                 : '<span class="badge badge-warning">Pending</span>';

@@ -241,27 +241,47 @@ def _send_to_asha(asha_data, message_text, mother_data, assessment_id, risk_cate
     """
     asha_id = asha_data.get('_id')
     telegram_chat_id = asha_data.get('telegram_chat_id')
-    
+
+    # Persist the alert as a dashboard notification FIRST — the ASHA must see risk
+    # alerts in her Notifications feed even when Telegram delivery is unavailable.
+    result = {"status": "failed", "telegram_sent": False, "logged": False}
+    try:
+        messages_repo.create({
+            'mother_id': str(mother_data.get('_id')),
+            'mother_name': mother_data.get('name'),
+            'to_asha_id': str(asha_id),
+            'message_type': 'ai_alert',
+            'sender_name': 'ArogyaMaa AI',
+            'subject': f'{risk_category} risk — {mother_data.get("name", "mother")}',
+            'content': message_text,
+            'is_alert': True,
+            'alert_type': f'ai_risk_{risk_category.lower()}',
+            'related_assessment_id': str(assessment_id),
+            'read': False,
+        })
+        result["logged"] = True
+    except Exception as e:
+        current_app.logger.error(f"[ALERTS] Failed to log ASHA notification: {e}")
+
     if not telegram_chat_id:
-        current_app.logger.warning(f"[ALERTS] ASHA {asha_id} has no telegram_chat_id")
-        return {"status": "no_telegram_chat_id"}
-    
-    result = {"status": "failed", "telegram_sent": False}
-    
+        current_app.logger.info(f"[ALERTS] ASHA {asha_id} has no telegram_chat_id (dashboard only)")
+        result["status"] = "dashboard_only" if result["logged"] else "no_telegram_chat_id"
+        return result
+
     try:
         # Send via Telegram
         telegram_response = telegram_service.send_message(telegram_chat_id, message_text)
-        
+
         if telegram_response and telegram_response.get('ok'):
             result["telegram_sent"] = True
             result["status"] = "sent"
             current_app.logger.info(f"[ALERTS] ✓ Sent to ASHA {asha_id}: {risk_category}")
         else:
             current_app.logger.error(f"[ALERTS] Telegram API error for ASHA {asha_id}")
-    
+
     except Exception as e:
         current_app.logger.error(f"[ALERTS] Error sending to ASHA {asha_id}: {e}", exc_info=True)
-    
+
     return result
 
 
@@ -274,13 +294,32 @@ def _send_to_doctor(doctor_data, message_text, mother_data, assessment_id, risk_
     """
     doctor_id = doctor_data.get('_id')
     telegram_chat_id = doctor_data.get('telegram_chat_id')
-    
+
+    # Persist to the doctor's dashboard inbox regardless of Telegram availability.
+    result = {"status": "failed", "telegram_sent": False, "logged": False}
+    try:
+        messages_repo.create({
+            'mother_id': str(mother_data.get('_id')),
+            'mother_name': mother_data.get('name'),
+            'to_doctor_id': str(doctor_id),
+            'message_type': 'ai_alert',
+            'sender_name': 'ArogyaMaa AI',
+            'subject': f'{risk_category} risk — review needed: {mother_data.get("name", "mother")}',
+            'content': message_text,
+            'is_alert': True,
+            'alert_type': f'ai_risk_{risk_category.lower()}',
+            'related_assessment_id': str(assessment_id),
+            'read': False,
+        })
+        result["logged"] = True
+    except Exception as e:
+        current_app.logger.error(f"[ALERTS] Failed to log doctor notification: {e}")
+
     if not telegram_chat_id:
-        current_app.logger.warning(f"[ALERTS] Doctor {doctor_id} has no telegram_chat_id")
-        return {"status": "no_telegram_chat_id"}
-    
-    result = {"status": "failed", "telegram_sent": False}
-    
+        current_app.logger.info(f"[ALERTS] Doctor {doctor_id} has no telegram_chat_id (dashboard only)")
+        result["status"] = "dashboard_only" if result["logged"] else "no_telegram_chat_id"
+        return result
+
     try:
         # Send via Telegram
         telegram_response = telegram_service.send_message(telegram_chat_id, message_text)

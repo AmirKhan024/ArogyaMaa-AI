@@ -244,6 +244,13 @@ def get_clinical_portfolio_context(mother_id):
         else:
             emergency_contact = 'Not Provided'
 
+        # Lifestyle & safety (Telegram registration answers, root-level post-flatten)
+        substance_raw = str(mother.get('substance_usage') or '').strip()
+        substance_usage = substance_raw if substance_raw else 'Not recorded'
+        substance_flag = substance_raw.lower() in ('yes', 'हाँ', 'haan')
+        consent_raw = str(mother.get('doctor_consent') or '').strip()
+        doctor_consent = consent_raw if consent_raw else 'Not recorded'
+
         patient_info = {
             "id": str(mother.get('_id', '')),
             "full_name": _safe_str(mother.get('name'), 'Unknown'),
@@ -257,6 +264,9 @@ def get_clinical_portfolio_context(mother_id):
             "current_symptoms": current_symptoms,
             "danger_signs": danger_signs,
             "emergency_contact": emergency_contact,
+            "substance_usage": substance_usage,
+            "substance_flag": substance_flag,
+            "doctor_consent": doctor_consent,
             "telegram_id": mother.get('telegram_chat_id')
         }
 

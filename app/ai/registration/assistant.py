@@ -18,7 +18,8 @@ class AIAssistant:
         self.client = Groq(api_key=groq_api_key)
 
     def _call_groq(self, prompt: str, system_prompt: str,
-                   model=os.getenv("LLM_MODEL", "openai/gpt-oss-120b")) -> str:
+                   model=os.getenv("LLM_MODEL", "openai/gpt-oss-120b"),
+                   temperature: float = 0.7) -> str:
         """Call Groq API with specific model and system prompt."""
         try:
             response = self.client.chat.completions.create(
@@ -27,7 +28,7 @@ class AIAssistant:
                     {"role": "user", "content": prompt}
                 ],
                 model=model,
-                temperature=0.7,
+                temperature=temperature,
                 max_tokens=1024
             )
             return response.choices[0].message.content

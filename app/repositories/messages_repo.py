@@ -22,8 +22,9 @@ _NOTIF_KNOWN = {
     "mother_id", "mother_name", "telegram_chat_id", "to_asha_id", "to_doctor_id",
     "message_type", "content", "message", "subject", "read", "from_doctor",
     "doctor_name", "document_id", "timestamp",
+    "is_alert", "alert_type", "related_assessment_id", "sender_name",
 }
-_NOTIF_UUID = {"mother_id", "to_asha_id", "to_doctor_id", "document_id"}
+_NOTIF_UUID = {"mother_id", "to_asha_id", "to_doctor_id", "document_id", "related_assessment_id"}
 
 
 def create(message_data):
@@ -70,6 +71,29 @@ def mark_notification_read(notification_id):
         "update notifications set read = true where id = cast(:id as uuid)",
         {"id": str(notification_id)},
     ) > 0
+
+
+def backfill_routing_for_mother(mother_id, asha_id=None, doctor_id=None):
+    """
+    Attach a newly assigned care team to this mother's previously unrouted
+    'from_mother' notifications so earlier messages appear in their dashboards.
+    Returns the number of rows updated.
+    """
+    sets, params = [], {"mid": str(mother_id)}
+    if asha_id:
+        sets.append("to_asha_id = coalesce(to_asha_id, cast(:aid as uuid))")
+        params["aid"] = str(asha_id)
+    if doctor_id:
+        sets.append("to_doctor_id = coalesce(to_doctor_id, cast(:did as uuid))")
+        params["did"] = str(doctor_id)
+    if not sets:
+        return 0
+    return exec_write(
+        f"update notifications set {', '.join(sets)} "
+        "where mother_id = cast(:mid as uuid) and message_type = 'from_mother' "
+        "and (to_asha_id is null or to_doctor_id is null)",
+        params,
+    )
 
 
 def mark_all_notifications_read(asha_id):

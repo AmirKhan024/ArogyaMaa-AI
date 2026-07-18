@@ -349,10 +349,15 @@ function renderNotifications() {
         const isUnread = !notification.read;
         const cardClass = `notification-card ${isUnread ? 'unread' : ''} ${notification.type === 'doctor_review' ? 'doctor-review' : ''}`;
         
-        const typeLabel = notification.type === 'doctor_review' 
-            ? '<i class="fa-solid fa-user-doctor"></i> Doctor Review' 
-            : '<i class="fa-solid fa-circle-exclamation"></i> System Alert';
-        const typeClass = notification.type === 'doctor_review' ? 'doctor' : 'system';
+        const TYPE_META = {
+            doctor_review:  { label: '<i class="fa-solid fa-user-doctor"></i> Doctor Review', cls: 'doctor' },
+            mother_message: { label: '<i class="fa-solid fa-comment"></i> Message from Mother', cls: 'doctor' },
+            ai_alert:       { label: '<i class="fa-solid fa-triangle-exclamation"></i> AI Risk Alert', cls: 'system' },
+            system:         { label: '<i class="fa-solid fa-circle-exclamation"></i> System Alert', cls: 'system' },
+        };
+        const meta = TYPE_META[notification.type] || TYPE_META.system;
+        const typeLabel = meta.label;
+        const typeClass = meta.cls;
         
         const timeAgo = getTimeAgo(notification.timestamp);
         

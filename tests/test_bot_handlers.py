@@ -74,7 +74,7 @@ async def test_all_menu_buttons_route_to_a_handler():
          patch.object(bot, "show_messages", mocks["messages"]), \
          patch.object(bot, "show_send_message_prompt", mocks["send_message"]), \
          patch.object(bot, "handle_register_button", mocks["menu_register"]), \
-         patch("appointment.handler.start_appointment_flow", mocks["book_appointment"]):
+         patch.object(bot, "show_appointment_menu", mocks["book_appointment"]):
         for value in callback_values:
             query = SimpleNamespace(
                 answer=AsyncMock(),

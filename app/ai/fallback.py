@@ -30,8 +30,8 @@ def calculate_risk_score_fallback(vital_signs, symptoms):
         score += 15
         risk_factors.append("Elevated BP")
     
-    # Hemoglobin Scoring (0-20 points)
-    hemoglobin = vital_signs.get('hemoglobin', 12)
+    # Hemoglobin Scoring (0-20 points) — handle both naming conventions
+    hemoglobin = vital_signs.get('hemoglobin') or vital_signs.get('hemoglobin_g_dl') or 12
     if hemoglobin < 7:
         score += 20
         risk_factors.append("Severe anemia (Hb < 7)")
@@ -108,7 +108,9 @@ def build_fallback_ai_evaluation(assessment, mother, historical):
     """
     Build AI evaluation using fallback rules when langgraph unavailable.
     """
-    vital_signs = assessment.get('vital_signs', {})
+    # Assessments store vitals under 'vitals' (legacy callers used 'vital_signs') —
+    # reading the wrong key here made every fallback score 0/LOW.
+    vital_signs = assessment.get('vitals') or assessment.get('vital_signs') or {}
     symptoms = assessment.get('symptoms', [])
     
     # Calculate risk

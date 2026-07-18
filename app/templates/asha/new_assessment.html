@@ -220,7 +220,15 @@ document.getElementById('assessment-form').addEventListener('submit', async (e) 
         showAlert('Please select a mother', 'warning');
         return;
     }
-    
+
+    // Vitals sanity check — catch swapped/typo readings before they reach the AI.
+    const sysBp = parseInt(document.getElementById('bp-systolic').value);
+    const diaBp = parseInt(document.getElementById('bp-diastolic').value);
+    if (sysBp <= diaBp) {
+        showAlert(`Systolic BP (${sysBp}) must be higher than diastolic (${diaBp}) — please re-check the reading`, 'error');
+        return;
+    }
+
     // Collect symptoms
     const symptoms = Array.from(document.querySelectorAll('input[name="symptoms"]:checked'))
         .map(cb => cb.value);
@@ -286,7 +294,8 @@ document.getElementById('assessment-form').addEventListener('submit', async (e) 
             showAssessmentResult(result);
             resetForm();
         } else {
-            throw new Error(result.error || 'Assessment submission failed');
+            const detail = Array.isArray(result.details) ? ' — ' + result.details.join('; ') : '';
+            throw new Error((result.error || 'Assessment submission failed') + detail);
         }
 
     } catch (error) {
@@ -323,7 +332,7 @@ function showAssessmentResult(result) {
                 ${aiEval.risk_category || 'UNKNOWN'} RISK
             </h2>
             <div style="font-size: 3rem; font-weight: bold;">
-                ${aiEval.risk_score || 'N/A'}/100
+                ${aiEval.risk_score != null ? aiEval.risk_score : 'N/A'}/100
             </div>
         </div>
         

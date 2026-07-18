@@ -1,0 +1,186 @@
+{% extends "doctor/base.html" %}
+
+{% block page_title %}Appointments{% endblock %}
+{% block page_header %}Appointments{% endblock %}
+
+{% block content %}
+<div class="page-actions">
+    <div class="action-stack" id="status-filters">
+        <button class="btn btn-sakura btn-sm" data-status="" onclick="setFilter(this)">All</button>
+        <button class="btn btn-secondary btn-sm" data-status="Pending" onclick="setFilter(this)">Pending</button>
+        <button class="btn btn-secondary btn-sm" data-status="Confirmed" onclick="setFilter(this)">Confirmed</button>
+        <button class="btn btn-secondary btn-sm" data-status="Rescheduled" onclick="setFilter(this)">Rescheduled</button>
+        <button class="btn btn-secondary btn-sm" data-status="Cancelled" onclick="setFilter(this)">Cancelled</button>
+    </div>
+    <button class="btn btn-secondary btn-sm" onclick="loadAppointments()" style="margin-left:auto;">
+        <i class="fa-solid fa-rotate"></i> Refresh
+    </button>
+</div>
+
+<div class="table-card">
+    <h3 class="table-title"><i class="fa-solid fa-calendar-check"></i> Appointment Requests
+        <span style="color: var(--text-muted); font-weight: 400; font-size: 0.85rem;">(booked by mothers via Telegram)</span>
+    </h3>
+    <div id="appointments-list">
+        <p class="text-center" style="color: var(--text-muted); padding: 1rem 0;">Loading...</p>
+    </div>
+</div>
+
+<!-- Reschedule modal -->
+<div id="reschedule-modal" class="modal">
+    <div class="modal-content" style="max-width: 440px;">
+        <div class="modal-header">
+            <h3><i class="fa-solid fa-calendar-pen"></i> Reschedule Appointment</h3>
+            <button class="modal-close" onclick="closeRescheduleModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p id="reschedule-patient" style="margin-bottom: 1rem; color: var(--text-secondary);"></p>
+            <div class="form-group">
+                <label>New date (DD-MM-YYYY)</label>
+                <input type="text" id="reschedule-date" class="form-control" placeholder="e.g. 25-07-2026">
+            </div>
+            <div class="form-group">
+                <label>New time (HH:MM, 24-hour)</label>
+                <input type="text" id="reschedule-time" class="form-control" placeholder="e.g. 10:30">
+            </div>
+            <div class="form-group">
+                <label>Note for the patient (optional)</label>
+                <textarea id="reschedule-notes" class="form-control" rows="2" placeholder="e.g. Please come fasting"></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeRescheduleModal()">Cancel</button>
+            <button class="btn btn-sakura" id="reschedule-submit" onclick="submitReschedule()">Reschedule &amp; Notify</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentFilter = '';
+let rescheduleTargetId = null;
+
+const STATUS_BADGE = {
+    'Pending':     'badge-warning',
+    'Confirmed':   'badge-success',
+    'Rescheduled': 'badge-secondary',
+    'Cancelled':   'badge-critical',
+};
+
+function setFilter(btn) {
+    currentFilter = btn.dataset.status;
+    document.querySelectorAll('#status-filters .btn').forEach(b => {
+        b.classList.toggle('btn-sakura', b === btn);
+        b.classList.toggle('btn-secondary', b !== btn);
+    });
+    loadAppointments();
+}
+
+async function loadAppointments() {
+    const list = document.getElementById('appointments-list');
+    try {
+        const qs = new URLSearchParams({ doctor_id: DOCTOR_ID });
+        if (currentFilter) qs.set('status', currentFilter);
+        const response = await fetch(`/doctor/appointments?${qs}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to load appointments');
+
+        if (!data.appointments.length) {
+            list.innerHTML = '<p class="text-center" style="color: var(--text-muted); padding: 1.25rem 0;">' +
+                'No appointments' + (currentFilter ? ` with status "${currentFilter}"` : '') +
+                ' yet. Mothers book via the 📅 button in the Telegram bot.</p>';
+            return;
+        }
+
+        list.innerHTML = data.appointments.map(a => {
+            const badgeCls = STATUS_BADGE[a.status] || 'badge-secondary';
+            const isPendingish = a.status === 'Pending' || a.status === 'Rescheduled';
+            const slot = (a.status === 'Confirmed' || a.status === 'Rescheduled') && a.confirmed_date
+                ? `${a.confirmed_date} at ${a.confirmed_time}`
+                : `${a.preferred_date} at ${a.preferred_time}`;
+            return `
+            <div style="display:flex; gap:1rem; align-items:flex-start; padding:1rem 0.5rem;
+                        border-bottom:1px solid var(--border); flex-wrap:wrap;">
+                <div style="flex:1; min-width:230px;">
+                    <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
+                        <strong>${a.patient_name || 'Unknown'}</strong>
+                        <span class="badge ${badgeCls}">${a.status}</span>
+                        ${a.mother_id ? `<a class="view-profile-link" href="/doctor/dashboard/patient/${a.mother_id}?doctor_id=${DOCTOR_ID}">View profile</a>` : ''}
+                    </div>
+                    <div style="color:var(--text-secondary); font-size:0.85rem; margin-top:0.25rem;">
+                        <i class="fa-solid fa-calendar"></i> ${slot}
+                        &nbsp;·&nbsp; <i class="fa-solid fa-phone"></i> ${a.patient_phone || 'N/A'}
+                        &nbsp;·&nbsp; Age ${a.patient_age || 'N/A'}
+                    </div>
+                    ${a.symptoms ? `<div style="margin-top:0.35rem;"><strong style="font-size:0.8rem; color:var(--text-secondary);">Symptoms:</strong> ${a.symptoms}</div>` : ''}
+                    ${a.doctor_notes ? `<div style="margin-top:0.25rem; color:var(--text-secondary); font-size:0.85rem;"><i class="fa-solid fa-note-sticky"></i> ${a.doctor_notes}</div>` : ''}
+                </div>
+                <div class="action-stack">
+                    ${isPendingish ? `
+                        <button class="btn btn-success btn-sm" onclick="actOn('${a.appointment_id}', 'confirm')">
+                            <i class="fa-solid fa-check"></i> Confirm</button>
+                        <button class="btn btn-secondary btn-sm" onclick="openReschedule('${a.appointment_id}', '${(a.patient_name || '').replace(/'/g, '')}')">
+                            <i class="fa-solid fa-calendar-pen"></i> Reschedule</button>
+                        <button class="btn btn-secondary btn-sm" style="color: var(--danger-color);" onclick="actOn('${a.appointment_id}', 'cancel')">
+                            <i class="fa-solid fa-xmark"></i> Cancel</button>
+                    ` : ''}
+                </div>
+            </div>`;
+        }).join('');
+    } catch (error) {
+        console.error('Appointments load failed:', error);
+        list.innerHTML = '<p class="text-center" style="color: var(--danger-color);">Failed to load: ' + error.message + '</p>';
+    }
+}
+
+async function actOn(appointmentId, action, extra = {}) {
+    try {
+        const response = await fetch(`/doctor/appointments/${appointmentId}/action`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ doctor_id: DOCTOR_ID, action, ...extra })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Action failed');
+        showAlert(
+            `Appointment ${result.appointment.status.toLowerCase()}` +
+            (result.patient_notified ? ' — mother notified on Telegram ✅' : ' (Telegram notification could not be delivered)'),
+            result.patient_notified ? 'success' : 'warning'
+        );
+        loadAppointments();
+    } catch (error) {
+        showAlert('Action failed: ' + error.message, 'error');
+    }
+}
+
+function openReschedule(appointmentId, patientName) {
+    rescheduleTargetId = appointmentId;
+    document.getElementById('reschedule-patient').textContent = `New slot for ${patientName}:`;
+    document.getElementById('reschedule-modal').style.display = 'flex';
+}
+
+function closeRescheduleModal() {
+    document.getElementById('reschedule-modal').style.display = 'none';
+    rescheduleTargetId = null;
+}
+
+function submitReschedule() {
+    const date = document.getElementById('reschedule-date').value.trim();
+    const time = document.getElementById('reschedule-time').value.trim();
+    const notes = document.getElementById('reschedule-notes').value.trim();
+    if (!date || !time) {
+        showAlert('Please enter both the new date and time', 'warning');
+        return;
+    }
+    const id = rescheduleTargetId;
+    closeRescheduleModal();
+    actOn(id, 'reschedule', { date, time, notes });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadAppointments();
+    updateTimestamp();
+});
+</script>
+{% endblock %}

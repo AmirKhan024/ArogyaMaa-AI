@@ -30,6 +30,7 @@ ROLES = {
     "doctor": ("doctor", "doctor123", [
         ("doctor_dashboard", "/doctor/dashboard/"),
         ("doctor_mothers", "/doctor/dashboard/mothers"),
+        ("doctor_appointments", "/doctor/dashboard/appointments"),
         ("doctor_message", "/doctor/dashboard/message"),
         ("doctor_documents", "/doctor/dashboard/documents"),
         ("doctor_ai_assistant", "/doctor/dashboard/ai-assistant"),

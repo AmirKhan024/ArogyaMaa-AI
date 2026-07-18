@@ -21,37 +21,59 @@ VISION_MODEL = os.getenv("GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-
 
 
 def _vision_extract_text(client, image_path: str) -> str:
-    """Read the text content of a document image via a Groq vision model."""
-    try:
-        with open(image_path, "rb") as f:
-            b64 = base64.b64encode(f.read()).decode()
-        ext = os.path.splitext(image_path)[1].lstrip(".").lower() or "jpeg"
-        if ext == "jpg":
-            ext = "jpeg"
-        response = client.chat.completions.create(
-            model=VISION_MODEL,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": (
-                        "Transcribe ALL text visible in this medical document image, exactly as written. "
-                        "Include test names, values, units and reference ranges. "
-                        "If the image contains no readable text, reply with exactly: NO_TEXT"
-                    )},
-                    {"type": "image_url", "image_url": {"url": f"data:image/{ext};base64,{b64}"}},
-                ],
-            }],
-            temperature=0.0,
-            max_tokens=2000,
-        )
-        text = (response.choices[0].message.content or "").strip()
-        if not text or "NO_TEXT" in text[:40]:
-            return ""
-        logger.info(f"[DOCUMENT ANALYZER] Vision extracted {len(text)} characters")
-        return text
-    except Exception as e:
-        logger.error(f"[DOCUMENT ANALYZER] Vision extraction failed: {e}")
-        return ""
+    """
+    Read the text content of a document image via a Groq vision model.
+
+    Retries transient failures (rate limits / 5xx) with a backoff so a busy
+    moment on the free tier doesn't turn a readable report into "unreadable".
+    Returns "" when no text could be read; raises RuntimeError("AI_BUSY") when
+    every attempt failed for transient reasons (callers surface "try again").
+    """
+    import time as _time
+
+    with open(image_path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode()
+    ext = os.path.splitext(image_path)[1].lstrip(".").lower() or "jpeg"
+    if ext == "jpg":
+        ext = "jpeg"
+
+    last_transient = None
+    for attempt in range(3):
+        try:
+            response = client.chat.completions.create(
+                model=VISION_MODEL,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": (
+                            "Transcribe ALL text visible in this medical document image, exactly as written. "
+                            "Include test names, values, units and reference ranges. "
+                            "If the image contains no readable text, reply with exactly: NO_TEXT"
+                        )},
+                        {"type": "image_url", "image_url": {"url": f"data:image/{ext};base64,{b64}"}},
+                    ],
+                }],
+                temperature=0.0,
+                max_tokens=2000,
+            )
+            text = (response.choices[0].message.content or "").strip()
+            if not text or "NO_TEXT" in text[:40]:
+                return ""
+            logger.info(f"[DOCUMENT ANALYZER] Vision extracted {len(text)} characters")
+            return text
+        except Exception as e:
+            msg = str(e)
+            transient = ("429" in msg or "rate limit" in msg.lower()
+                         or "500" in msg or "502" in msg or "503" in msg
+                         or "timeout" in msg.lower())
+            logger.warning(f"[DOCUMENT ANALYZER] Vision attempt {attempt + 1}/3 failed: {msg[:150]}")
+            if not transient:
+                return ""
+            last_transient = e
+            if attempt < 2:
+                _time.sleep(12 * (attempt + 1))
+
+    raise RuntimeError("AI_BUSY") from last_transient
 
 
 def analyze_medical_document(image_path: str, document_type: str, description: str = "") -> Dict:
@@ -109,7 +131,22 @@ def analyze_medical_document(image_path: str, document_type: str, description: s
                 logger.info(f"[DOCUMENT ANALYZER] OCR extracted {len(extracted_text)} characters")
             except Exception as ocr_error:
                 logger.info(f"[DOCUMENT ANALYZER] OCR unavailable ({ocr_error}); trying Groq vision")
-                extracted_text = _vision_extract_text(client, image_path)
+                try:
+                    extracted_text = _vision_extract_text(client, image_path)
+                except RuntimeError:
+                    # Transient AI overload — distinct from "unreadable document".
+                    return {
+                        "success": False,
+                        "error": "AI_BUSY",
+                        "key_findings": [],
+                        "abnormal_values": [],
+                        "clinical_summary": (
+                            "The AI service is busy right now — the document was saved. "
+                            "Please use Re-analyze in a minute or two."
+                        ),
+                        "recommendations": ["Retry the AI analysis shortly"],
+                        "extracted_text": ""
+                    }
 
         if not extracted_text:
             return {

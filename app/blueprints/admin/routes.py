@@ -7,7 +7,7 @@ Admins manage users, assignments, and view analytics.
 URL Prefix: /admin
 """
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 from app.repositories import mothers_repo, asha_repo, doctors_repo, assessments_repo
 from datetime import datetime, timedelta
 
@@ -94,28 +94,40 @@ def get_mothers():
     """Get all mothers with assigned ASHA and doctor details"""
     try:
         mothers = mothers_repo.list_all_active()
-        
+
+        # One bulk query + in-memory grouping instead of per-mother round-trips
+        # (each pooler round-trip costs ~0.5s; N+1 made this page take >10s).
+        latest_risk_by_mother = {}
+        for a in assessments_repo.list_all():
+            mid = str(a.get('mother_id'))
+            current = latest_risk_by_mother.get(mid)
+            ts = _date_str_of(a)
+            if current is None or ts > current[0]:
+                latest_risk_by_mother[mid] = (ts, _risk_of(a))
+
+        _asha_names, _doctor_names = {}, {}
+
         result = []
         for mother in mothers:
-            # Get latest assessment for risk level
-            assessments = assessments_repo.list_by_mother(str(mother['_id']))
-            latest_risk = 'LOW'
-            if assessments:
-                latest_risk = _risk_of(assessments[0])
-            
-            # Get assigned ASHA name
+            latest_risk = latest_risk_by_mother.get(str(mother['_id']), ('', 'LOW'))[1]
+
+            # Get assigned ASHA name (memoized)
             asha_name = None
-            if mother.get('assigned_asha_id'):
-                asha = asha_repo.find_by_id(mother['assigned_asha_id'])
-                if asha:
-                    asha_name = asha.get('name')
-            
-            # Get assigned doctor name
+            aid = str(mother.get('assigned_asha_id') or '')
+            if aid:
+                if aid not in _asha_names:
+                    asha = asha_repo.find_by_id(aid)
+                    _asha_names[aid] = asha.get('name') if asha else None
+                asha_name = _asha_names[aid]
+
+            # Get assigned doctor name (memoized)
             doctor_name = None
-            if mother.get('assigned_doctor_id'):
-                doctor = doctors_repo.find_by_id(mother['assigned_doctor_id'])
-                if doctor:
-                    doctor_name = doctor.get('name')
+            did = str(mother.get('assigned_doctor_id') or '')
+            if did:
+                if did not in _doctor_names:
+                    doctor = doctors_repo.find_by_id(did)
+                    _doctor_names[did] = doctor.get('name') if doctor else None
+                doctor_name = _doctor_names[did]
             
             result.append({
                 '_id': str(mother['_id']),
@@ -293,7 +305,22 @@ def assign_worker():
             
             # Add to new doctor's assigned list
             doctors_repo.add_mother_assignment(doctor_id, mother_id)
-        
+
+        # Route the mother's earlier (unassigned-era) messages to the new care team
+        # so they show up in the ASHA/doctor dashboards.
+        try:
+            from app.repositories import messages_repo
+            routed = messages_repo.backfill_routing_for_mother(
+                mother_id, asha_id=asha_id, doctor_id=doctor_id
+            )
+            if routed:
+                current_app.logger.info(
+                    f"[ASSIGN] Routed {routed} earlier message(s) from mother {mother_id} "
+                    "to the newly assigned care team"
+                )
+        except Exception as e:
+            current_app.logger.error(f"[ASSIGN] Message backfill failed: {e}")
+
         return jsonify({
             "status": "success",
             "message": "Assignment updated successfully"

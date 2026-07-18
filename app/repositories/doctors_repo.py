@@ -11,7 +11,8 @@ from app.repositories._sql import (
 
 _KNOWN = {
     "username", "password_hash", "name", "specialization", "phone", "qualification",
-    "hospital", "availability", "active", "assigned_mothers", "performance_stats", "joined_at",
+    "hospital", "availability", "active", "assigned_mothers", "performance_stats",
+    "joined_at", "telegram_chat_id",
 }
 _JSONB = {"availability", "assigned_mothers", "performance_stats"}
 

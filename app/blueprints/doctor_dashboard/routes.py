@@ -98,6 +98,17 @@ def message():
     return render_template('doctor/message.html', doctor_id=doctor_id, doctor_name=doctor_name)
 
 
+@doctor_dashboard_bp.route('/appointments')
+def appointments():
+    """
+    Appointment requests booked by mothers via the Telegram bot —
+    confirm / reschedule / cancel with instant Telegram notification.
+    """
+    doctor_id = request.args.get('doctor_id') or session.get('doctor_id', '')
+    doctor_name = session.get('display_name') or _get_doctor_name(doctor_id)
+    return render_template('doctor/appointments.html', doctor_id=doctor_id, doctor_name=doctor_name)
+
+
 @doctor_dashboard_bp.route('/documents')
 def view_documents():
     """

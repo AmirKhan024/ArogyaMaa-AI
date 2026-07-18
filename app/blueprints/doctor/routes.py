@@ -187,22 +187,34 @@ def get_assessments():
             common_mother_name = mother.get('name', 'Unknown')
             assessments = assessments_repo.list_by_mother(mother_id, limit=limit)
             
-            # Context for ASHA name resolution
+            # Context for ASHA name resolution (memoized — each DB round-trip to the
+            # Supabase pooler costs ~0.5s, so N+1 lookups make the page crawl)
             from app.repositories import asha_repo
-            
+            asha_names = {}
+
             for assessment in assessments:
-                inner_asha_id = assessment.get('asha_id')
-                inner_asha_name = 'ASHA Worker'
-                if inner_asha_id:
-                    asha_worker = asha_repo.get_by_id(str(inner_asha_id))
-                    if asha_worker:
-                        inner_asha_name = asha_worker.get('name', 'ASHA Worker')
-                
+                inner_asha_id = str(assessment.get('asha_id') or '')
+                if inner_asha_id and inner_asha_id not in asha_names:
+                    asha_worker = asha_repo.get_by_id(inner_asha_id)
+                    asha_names[inner_asha_id] = (asha_worker or {}).get('name', 'ASHA Worker')
+                inner_asha_name = asha_names.get(inner_asha_id, 'ASHA Worker')
+
                 assessments_list.append(_format_as_s_res(assessment, common_mother_name, inner_asha_name))
                 
             return jsonify({
                 "mother_id": mother_id,
                 "mother_name": common_mother_name,
+                "mother_info": {
+                    "name": common_mother_name,
+                    "age": mother.get('age'),
+                    "phone": mother.get('phone'),
+                    "location": mother.get('location'),
+                    "gestational_age_weeks": (
+                        (mother.get('current_pregnancy') or {}).get('gestational_age_weeks')
+                        or mother.get('gestational_age')
+                    ),
+                    "blood_group": (mother.get('medical_history') or {}).get('blood_group'),
+                },
                 "total_assessments": len(assessments_list),
                 "assessments": assessments_list
             }), 200
@@ -212,24 +224,23 @@ def get_assessments():
             assessments = assessments_repo.list_pending_doctor_review(doctor_id, limit=limit)
             
             from app.repositories import asha_repo
-            
+            # Memoize name lookups — without this the page does 2 pooler round-trips
+            # PER assessment (~20s for 18 rows).
+            mother_names, asha_names = {}, {}
+
             for assessment in assessments:
-                # Need to resolve mother name for each
-                m_id = assessment.get('mother_id')
-                m_name = 'Unknown'
-                if m_id:
-                    m_obj = mothers_repo.get_by_id(str(m_id))
-                    if m_obj:
-                        m_name = m_obj.get('name', 'Unknown')
-                
-                # Need to resolve ASHA name for each
-                a_id = assessment.get('asha_id')
-                a_name = 'ASHA Worker'
-                if a_id:
-                    a_obj = asha_repo.get_by_id(str(a_id))
-                    if a_obj:
-                        a_name = a_obj.get('name', 'ASHA Worker')
-                
+                m_id = str(assessment.get('mother_id') or '')
+                if m_id and m_id not in mother_names:
+                    m_obj = mothers_repo.get_by_id(m_id)
+                    mother_names[m_id] = (m_obj or {}).get('name', 'Unknown')
+                m_name = mother_names.get(m_id, 'Unknown')
+
+                a_id = str(assessment.get('asha_id') or '')
+                if a_id and a_id not in asha_names:
+                    a_obj = asha_repo.get_by_id(a_id)
+                    asha_names[a_id] = (a_obj or {}).get('name', 'ASHA Worker')
+                a_name = asha_names.get(a_id, 'ASHA Worker')
+
                 assessments_list.append(_format_as_s_res(assessment, m_name, a_name))
                 
             return jsonify({
@@ -282,6 +293,9 @@ def _format_as_s_res(assessment, mother_name, asha_name):
         "ai_evaluation": {
             "risk_score": ai_eval.get('risk_score'),
             "risk_category": ai_eval.get('risk_category', 'NOT_EVALUATED'),
+            "confidence": ai_eval.get('confidence'),
+            "evaluation_method": ai_eval.get('evaluation_method'),
+            "agent_outputs": ai_eval.get('agent_outputs', {}),
             "recommended_actions": ai_eval.get('recommended_actions', [])
         } if ai_eval else None,
         "doctor_reviewed": assessment.get('reviewed_by_doctor', False),
@@ -569,6 +583,177 @@ Take care! 💚
             "error": "Failed to submit consultation",
             "details": str(e)
         }), 500
+
+
+@doctor_bp.route('/appointments', methods=['GET'])
+def list_appointments():
+    """
+    All appointment requests (Telegram bookings), newest first.
+
+    Query params: doctor_id (required, validated), status (optional filter)
+    """
+    try:
+        doctor_id = request.args.get('doctor_id')
+        if not doctor_id:
+            return jsonify({"error": "doctor_id is required"}), 400
+        if not doctors_repo.get_by_id(doctor_id):
+            return jsonify({"error": "Doctor not found"}), 404
+
+        from app.repositories import appointments_repo
+        rows = appointments_repo.list_all(status=request.args.get('status'))
+
+        items = []
+        for a in rows:
+            items.append({
+                "appointment_id": a.get('appointment_id'),
+                "patient_name": a.get('patient_name'),
+                "patient_age": a.get('patient_age'),
+                "patient_phone": a.get('patient_phone'),
+                "mother_id": str(a.get('mother_id')) if a.get('mother_id') else None,
+                "preferred_date": a.get('preferred_date'),
+                "preferred_time": a.get('preferred_time'),
+                "symptoms": a.get('symptoms'),
+                "status": a.get('status'),
+                "confirmed_date": a.get('confirmed_date'),
+                "confirmed_time": a.get('confirmed_time'),
+                "doctor_notes": a.get('doctor_notes'),
+                "created_at": a.get('created_at'),
+            })
+        return jsonify({"appointments": items, "total": len(items)}), 200
+
+    except Exception as e:
+        current_app.logger.error(f"Error listing appointments: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@doctor_bp.route('/appointments/<appointment_id>/action', methods=['POST'])
+def appointment_action(appointment_id):
+    """
+    Confirm / reschedule / cancel an appointment from the dashboard and notify
+    the mother on Telegram in her language.
+
+    Body: {doctor_id, action: confirm|reschedule|cancel, date?, time?, notes?}
+    """
+    try:
+        data = request.get_json() or {}
+        doctor_id = data.get('doctor_id')
+        action = (data.get('action') or '').lower()
+
+        if not doctor_id or not doctors_repo.get_by_id(doctor_id):
+            return jsonify({"error": "Valid doctor_id is required"}), 400
+        if action not in ('confirm', 'reschedule', 'cancel'):
+            return jsonify({"error": "action must be confirm, reschedule or cancel"}), 400
+
+        from app.repositories import appointments_repo
+        from appointment.webhook_server import (
+            build_confirmed_message, build_rescheduled_message, build_cancelled_message,
+        )
+
+        existing = appointments_repo.get_by_appointment_id(appointment_id)
+        if not existing:
+            return jsonify({"error": "Appointment not found"}), 404
+
+        if action == 'confirm':
+            updated = appointments_repo.update_status(
+                appointment_id, "Confirmed",
+                confirmed_date=data.get('date') or existing.get('preferred_date'),
+                confirmed_time=data.get('time') or existing.get('preferred_time'),
+                doctor_notes=data.get('notes', ''),
+            )
+            patient_msg = build_confirmed_message(updated)
+        elif action == 'reschedule':
+            if not data.get('date') or not data.get('time'):
+                return jsonify({"error": "date and time are required for reschedule"}), 400
+            updated = appointments_repo.update_status(
+                appointment_id, "Rescheduled",
+                confirmed_date=data['date'], confirmed_time=data['time'],
+                doctor_notes=data.get('notes', ''),
+            )
+            patient_msg = build_rescheduled_message(updated)
+        else:  # cancel
+            updated = appointments_repo.update_status(
+                appointment_id, "Cancelled", doctor_notes=data.get('notes', ''),
+            )
+            patient_msg = build_cancelled_message(updated)
+
+        # Notify the mother on Telegram (non-fatal; works from the web process).
+        notified = False
+        chat_id = updated.get('telegram_chat_id')
+        if chat_id:
+            try:
+                resp = telegram_service.send_message(chat_id, patient_msg)
+                notified = bool(resp and resp.get('ok'))
+            except Exception as e:
+                current_app.logger.error(f"[Appointments] Patient notify failed: {e}")
+
+        return jsonify({
+            "status": "success",
+            "appointment": {
+                "appointment_id": updated.get('appointment_id'),
+                "status": updated.get('status'),
+                "confirmed_date": updated.get('confirmed_date'),
+                "confirmed_time": updated.get('confirmed_time'),
+            },
+            "patient_notified": notified,
+        }), 200
+
+    except Exception as e:
+        current_app.logger.error(f"Error acting on appointment: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@doctor_bp.route('/messages', methods=['GET'])
+def list_messages():
+    """
+    Inbox for the doctor: notifications addressed to them (mother messages,
+    AI risk alerts, system notes), newest first.
+
+    Query params: doctor_id (required), limit (optional, default 50)
+    """
+    try:
+        doctor_id = request.args.get('doctor_id')
+        if not doctor_id:
+            return jsonify({"error": "doctor_id is required"}), 400
+        if not doctors_repo.get_by_id(doctor_id):
+            return jsonify({"error": "Doctor not found"}), 404
+
+        limit = int(request.args.get('limit', 50))
+        notifications = messages_repo.list_by_recipient(doctor_id, 'doctor', limit=limit)
+
+        items = []
+        for n in notifications:
+            items.append({
+                "id": str(n.get('_id')),
+                "mother_id": str(n.get('mother_id')) if n.get('mother_id') else None,
+                "mother_name": n.get('mother_name') or 'Unknown',
+                "message_type": n.get('message_type') or 'note',
+                "content": n.get('content') or n.get('message') or '',
+                "subject": n.get('subject'),
+                "is_alert": bool(n.get('is_alert')),
+                "alert_type": n.get('alert_type'),
+                "related_assessment_id": (
+                    str(n.get('related_assessment_id'))
+                    if n.get('related_assessment_id') else None
+                ),
+                "read": bool(n.get('read')),
+                "timestamp": _safe_iso(n.get('timestamp')),
+            })
+        unread = sum(1 for i in items if not i['read'])
+        return jsonify({"messages": items, "unread_count": unread}), 200
+
+    except Exception as e:
+        current_app.logger.error(f"Error fetching doctor messages: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@doctor_bp.route('/messages/<notification_id>/read', methods=['POST'])
+def mark_message_read(notification_id):
+    """Mark one inbox notification as read."""
+    try:
+        ok = messages_repo.mark_notification_read(notification_id)
+        return jsonify({"status": "success" if ok else "not_found"}), 200 if ok else 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @doctor_bp.route('/message', methods=['POST'])

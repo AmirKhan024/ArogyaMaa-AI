@@ -23,7 +23,7 @@ except ImportError:
     AI_AVAILABLE = False
     current_app.logger.warning("[AI] LangGraph not available, using fallback") if current_app else None
 
-from app.ai.fallback import build_fallback_ai_evaluation
+from app.ai.fallback import build_fallback_ai_evaluation, calculate_risk_score_fallback
 from app.ai.alerts import send_ai_alerts
 
 asha_bp = Blueprint('asha', __name__)
@@ -196,6 +196,37 @@ def submit_assessment():
                 "error": "Missing required vital signs",
                 "missing": missing_vitals
             }), 400
+
+        # Sanity-check the vitals — reject physiologically impossible values so a
+        # typo (e.g. BP 87/98, systolic below diastolic) can't corrupt risk scores.
+        try:
+            sys_bp = float(vitals['bp_systolic'])
+            dia_bp = float(vitals['bp_diastolic'])
+            hr = float(vitals['heart_rate'])
+        except (TypeError, ValueError):
+            return jsonify({"error": "Vital signs must be numeric"}), 400
+
+        problems = []
+        if sys_bp <= dia_bp:
+            problems.append(
+                f"Systolic BP ({sys_bp:g}) must be higher than diastolic ({dia_bp:g}) — "
+                "please re-check the reading"
+            )
+        if not (60 <= sys_bp <= 260):
+            problems.append(f"Systolic BP {sys_bp:g} is outside the plausible range (60–260)")
+        if not (30 <= dia_bp <= 160):
+            problems.append(f"Diastolic BP {dia_bp:g} is outside the plausible range (30–160)")
+        if not (30 <= hr <= 220):
+            problems.append(f"Heart rate {hr:g} is outside the plausible range (30–220)")
+        weight = vitals.get('weight_kg') or vitals.get('weight')
+        if weight is not None:
+            try:
+                if not (25 <= float(weight) <= 200):
+                    problems.append(f"Weight {weight} kg is outside the plausible range (25–200)")
+            except (TypeError, ValueError):
+                problems.append("Weight must be numeric")
+        if problems:
+            return jsonify({"error": "Implausible vital signs", "details": problems}), 400
         
         # Normalize IDs to strings (Postgres uses UUID strings)
         try:
@@ -293,11 +324,20 @@ def submit_assessment():
                     if AI_AVAILABLE:
                         # Prepare input for AI
                         ai_input = prepare_assessment_for_ai(assessment, mother, historical)
-                        
-                        # Create and invoke LangGraph
+
+                        # Invoke LangGraph with a HARD time budget. Groq 429s carry
+                        # server-suggested backoffs that can spiral into an hour of
+                        # retries across the agents — the request must never hang;
+                        # after the budget we score with the rule-based fallback.
+                        import concurrent.futures as _cf
                         graph = create_ArogyaMaa_graph()
-                        ai_result = graph.invoke(ai_input)
-                        
+                        _pool = _cf.ThreadPoolExecutor(max_workers=1)
+                        try:
+                            ai_result = _pool.submit(graph.invoke, ai_input).result(timeout=120)
+                        finally:
+                            # wait=False: never block the request on a stuck retry thread
+                            _pool.shutdown(wait=False, cancel_futures=True)
+
                         # Transform to ai_evaluation schema
                         ai_evaluation = build_ai_evaluation(ai_result)
                         current_app.logger.info("[AI] Using LangGraph AI evaluation")
@@ -395,19 +435,30 @@ def submit_assessment():
                 "risk_category": ai_eval.get('risk_category'),
                 "risk_score": ai_eval.get('risk_score'),
                 "confidence": ai_eval.get('confidence'),
+                "evaluation_method": ai_eval.get('evaluation_method'),
                 "requires_doctor_review": ai_eval.get('requires_doctor_review'),
                 "recommended_actions": ai_eval.get('recommended_actions', []),
-                "key_findings": ai_eval.get('key_findings', []),
                 "agents_invoked": ai_eval.get('agents_invoked', [])
             }
             response_data["alerts_sent"] = True
         elif ai_evaluation_status == "error":
+            # Even a total AI failure must yield a real, vitals-driven risk number —
+            # never a null score. The rule-based scorer needs no external services.
             response_data["ai_error"] = ai_error
-            response_data["ai_evaluation"] = {
-                "risk_category": "UNKNOWN",
-                "risk_score": None,
-                "recommended_actions": ["AI evaluation failed. Please review manually."]
-            }
+            try:
+                rb = calculate_risk_score_fallback(vitals, data.get('symptoms', []))
+                response_data["ai_evaluation"] = {
+                    "risk_category": rb['risk_category'],
+                    "risk_score": rb['risk_score'],
+                    "evaluation_method": "rule_based_fallback",
+                    "recommended_actions": rb['recommended_actions'],
+                }
+            except Exception:
+                response_data["ai_evaluation"] = {
+                    "risk_category": "UNKNOWN",
+                    "risk_score": 0,
+                    "recommended_actions": ["AI evaluation failed. Please review manually."]
+                }
         
         return jsonify(response_data), 201
     
@@ -792,10 +843,14 @@ def get_notifications(asha_id):
         
         notifications = []
         
+        _mother_names = {}
         for msg in messages:
-            # Get mother info
-            mother = mothers_repo.get_by_id(msg.get('mother_id'))
-            mother_name = mother.get('name') if mother else 'Unknown'
+            # Get mother info (memoized — one pooler round-trip per unique mother)
+            m_id = str(msg.get('mother_id') or '')
+            if m_id and m_id not in _mother_names:
+                mother = mothers_repo.get_by_id(m_id)
+                _mother_names[m_id] = mother.get('name') if mother else 'Unknown'
+            mother_name = _mother_names.get(m_id, 'Unknown')
             
             # Format notification
             notification = {
@@ -825,12 +880,27 @@ def get_notifications(asha_id):
                     # General message from doctor
                     notification['title'] = f"Message from Dr. {msg.get('doctor_name', 'Doctor')}"
                     notification['preview'] = msg.get('message', '')[:150] + '...'
+            elif msg.get('message_type') == 'from_mother':
+                # Direct message from a mother (Telegram)
+                notification['type'] = 'mother_message'
+                notification['title'] = f"Message from {mother_name}"
+                body = msg.get('content') or msg.get('message', '')
+                notification['message'] = body
+                notification['preview'] = body[:150]
+            elif msg.get('is_alert') or msg.get('message_type') == 'ai_alert':
+                # AI risk alert for one of this ASHA's mothers
+                notification['type'] = 'ai_alert'
+                notification['alert_type'] = msg.get('alert_type')
+                notification['title'] = msg.get('subject') or f"AI risk alert — {mother_name}"
+                body = msg.get('content') or msg.get('message', '')
+                notification['message'] = body
+                notification['preview'] = body[:150]
             else:
                 # System notification
                 notification['type'] = 'system'
                 notification['title'] = msg.get('subject', 'System Notification')
                 notification['preview'] = msg.get('message', '')[:150] + '...'
-            
+
             notifications.append(notification)
         
         # Sort by timestamp (newest first)

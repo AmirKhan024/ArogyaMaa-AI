@@ -1,28 +1,39 @@
 {% extends "doctor/base.html" %}
 
-{% block page_title %}Send Message{% endblock %}
-{% block page_header %}Send Message{% endblock %}
+{% block page_title %}Messages{% endblock %}
+{% block page_header %}Messages{% endblock %}
 
 {% block content %}
-<!-- Message Form -->
+<!-- Inbox -->
 <div class="table-card">
-    <h3 class="table-title">Send Telegram Message to Mother</h3>
-    
-    <form id="message-form" style="max-width: 600px; margin: 0 auto;">
+    <h3 class="table-title">
+        <i class="fa-solid fa-inbox"></i> Inbox
+        <span id="inbox-unread" class="notification-badge" style="display:none;"></span>
+    </h3>
+    <div id="inbox-list">
+        <p class="text-center" style="color: var(--text-muted); padding: 1rem 0;">Loading...</p>
+    </div>
+</div>
+
+<!-- Compose -->
+<div class="table-card" style="margin-top: 1.5rem;" id="compose-card">
+    <h3 class="table-title"><i class="fa-solid fa-paper-plane"></i> Send Message to Mother</h3>
+
+    <form id="message-form" style="max-width: 600px;">
         <div class="form-group">
             <label for="mother-select">Select Mother <span style="color: red;">*</span></label>
             <select id="mother-select" class="form-control" required>
                 <option value="">-- Select Mother --</option>
             </select>
         </div>
-        
+
         <div class="form-group">
             <label for="message-text">Message <span style="color: red;">*</span></label>
-            <textarea id="message-text" class="form-control" rows="6" required 
+            <textarea id="message-text" class="form-control" rows="5" required
                       placeholder="Type your message to the mother..."></textarea>
-            <small>The message will be sent via Telegram</small>
+            <small style="color: var(--text-muted);">Delivered instantly on Telegram.</small>
         </div>
-        
+
         <div class="form-group">
             <label for="message-priority">Priority</label>
             <select id="message-priority" class="form-control">
@@ -31,44 +42,24 @@
                 <option value="urgent">Urgent</option>
             </select>
         </div>
-        
-        <div style="margin-top: 2rem;">
-            <button type="submit" class="btn btn-sakura" id="submit-btn">Send Message</button>
+
+        <div style="margin-top: 1.5rem;">
+            <button type="submit" class="btn btn-sakura" id="submit-btn">
+                <i class="fa-solid fa-paper-plane"></i> Send Message
+            </button>
             <button type="button" class="btn btn-secondary" onclick="resetForm()">Clear</button>
         </div>
     </form>
 </div>
 
-<!-- Recent Messages -->
-<div class="table-card" style="margin-top: 2rem;">
-    <h3 class="table-title">Recent Messages Sent</h3>
-    <div class="table-responsive">
-        <table class="data-table" id="recent-messages-table">
-            <thead>
-                <tr>
-                    <th>Date</th>
-                    <th>Mother Name</th>
-                    <th>Message Preview</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody id="recent-messages-body">
-                <tr>
-                    <td colspan="4" class="text-center">No messages yet</td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
-</div>
-
 <div id="success-modal" class="modal">
     <div class="modal-content" style="max-width: 400px;">
         <div class="modal-header">
-            <h3><i class="fa-solid fa-circle-check" style="color: #27ae60"></i> Message Sent</h3>
+            <h3><i class="fa-solid fa-circle-check" style="color: var(--success-color)"></i> Message Sent</h3>
             <button class="modal-close" onclick="closeSuccessModal()">&times;</button>
         </div>
         <div class="modal-body">
-            <p>Your message has been sent successfully via Telegram.</p>
+            <p>Your message has been delivered via Telegram.</p>
         </div>
         <div class="modal-footer">
             <button class="btn btn-primary" onclick="closeSuccessModal()">Close</button>
@@ -80,112 +71,165 @@
 {% block extra_js %}
 <script>
 let mothersData = [];
-let messagesData = [];
 
-// Check if Doctor ID is set
 if (!DOCTOR_ID || DOCTOR_ID === '') {
     showAlert('Please provide Doctor ID in URL: ?doctor_id=<your_id>', 'warning');
 }
 
-// Load mothers for dropdown
 async function loadMothers() {
     if (!DOCTOR_ID) return;
-    
     try {
         const response = await fetch(`/doctor/mothers?doctor_id=${DOCTOR_ID}`);
         const data = await response.json();
-        
-        if (!response.ok) {
-            throw new Error(data.error || 'Failed to load mothers');
-        }
-        
+        if (!response.ok) throw new Error(data.error || 'Failed to load mothers');
         mothersData = data.mothers || [];
-        
         const select = document.getElementById('mother-select');
         select.innerHTML = '<option value="">-- Select Mother --</option>' +
-            mothersData.map(mother => 
+            mothersData.map(mother =>
                 `<option value="${mother.mother_id}">${mother.name} (${mother.phone || 'No phone'})</option>`
             ).join('');
-        
     } catch (error) {
         console.error('Failed to load mothers:', error);
         showAlert('Failed to load mothers: ' + error.message, 'error');
     }
 }
 
-// Handle form submission
+function typeBadge(item) {
+    if (item.is_alert || (item.message_type || '').startsWith('ai_')) {
+        return '<span class="badge badge-danger"><i class="fa-solid fa-triangle-exclamation"></i> AI Alert</span>';
+    }
+    if (item.message_type === 'from_mother') {
+        return '<span class="badge badge-success"><i class="fa-solid fa-comment"></i> From mother</span>';
+    }
+    return '<span class="badge badge-secondary">Note</span>';
+}
+
+function fmtTime(iso) {
+    if (!iso) return '';
+    try {
+        return new Date(iso).toLocaleString('en-IN', {
+            day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+        });
+    } catch (e) { return iso; }
+}
+
+async function loadInbox() {
+    if (!DOCTOR_ID) return;
+    const list = document.getElementById('inbox-list');
+    try {
+        const response = await fetch(`/doctor/messages?doctor_id=${DOCTOR_ID}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to load inbox');
+
+        const badge = document.getElementById('inbox-unread');
+        if (data.unread_count > 0) {
+            badge.textContent = data.unread_count;
+            badge.style.display = 'inline-flex';
+        } else {
+            badge.style.display = 'none';
+        }
+
+        if (!data.messages.length) {
+            list.innerHTML = '<p class="text-center" style="color: var(--text-muted); padding: 1rem 0;">' +
+                'No messages yet. When a mother writes to you on Telegram, it appears here.</p>';
+            return;
+        }
+
+        list.innerHTML = data.messages.map(m => `
+            <div class="inbox-item" data-id="${m.id}" style="display:flex; gap:0.9rem; align-items:flex-start;
+                        padding:0.9rem 0.75rem; border-bottom:1px solid var(--border);
+                        ${m.read ? '' : 'background: var(--primary-soft); border-radius: 8px;'}">
+                <div style="flex:1; min-width:0;">
+                    <div style="display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap;">
+                        <strong>${m.mother_name}</strong>
+                        ${typeBadge(m)}
+                        ${m.read ? '' : '<span class="badge badge-warning">New</span>'}
+                        <span style="color:var(--text-muted); font-size:0.78rem; margin-left:auto;">${fmtTime(m.timestamp)}</span>
+                    </div>
+                    <div style="margin-top:0.35rem; color:var(--text-primary); white-space:pre-wrap;">${m.subject ? '<strong>' + m.subject + '</strong><br>' : ''}${m.content}</div>
+                </div>
+                <div class="action-stack" style="flex-direction:column;">
+                    ${m.mother_id ? `<button class="btn btn-sakura btn-sm" onclick="replyTo('${m.mother_id}', '${m.id}')">
+                        <i class="fa-solid fa-reply"></i> Reply</button>` : ''}
+                    ${m.read ? '' : `<button class="btn btn-secondary btn-sm" onclick="markRead('${m.id}')">Mark read</button>`}
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Inbox load failed:', error);
+        list.innerHTML = '<p class="text-center" style="color: var(--danger-color);">Failed to load inbox: ' +
+            error.message + '</p>';
+    }
+}
+
+async function markRead(id) {
+    try {
+        await fetch(`/doctor/messages/${id}/read`, { method: 'POST' });
+        await loadInbox();
+    } catch (e) { console.error(e); }
+}
+
+function replyTo(motherId, notificationId) {
+    const select = document.getElementById('mother-select');
+    select.value = motherId;
+    document.getElementById('message-text').focus();
+    document.getElementById('compose-card').scrollIntoView({ behavior: 'smooth' });
+    // Replying implies the message was seen.
+    markRead(notificationId);
+}
+
 document.getElementById('message-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    
+
     const motherId = document.getElementById('mother-select').value;
     const messageText = document.getElementById('message-text').value;
     const priority = document.getElementById('message-priority').value;
-    
+
     if (!motherId || !messageText) {
         showAlert('Please select a mother and enter a message', 'warning');
         return;
     }
-    
-    const payload = {
-        doctor_id: DOCTOR_ID,
-        mother_id: motherId,
-        message: messageText,
-        priority: priority
-    };
-    
+
+    const payload = { doctor_id: DOCTOR_ID, mother_id: motherId, message: messageText, priority: priority };
+
     const submitBtn = document.getElementById('submit-btn');
     submitBtn.disabled = true;
     submitBtn.textContent = 'Sending...';
-    
+
     try {
         const response = await fetch('/doctor/message', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-        
         const result = await response.json();
-        
         if (response.ok) {
             document.getElementById('success-modal').style.display = 'flex';
             resetForm();
-            // Reload recent messages
-            await loadRecentMessages();
         } else {
             throw new Error(result.error || 'Message sending failed');
         }
-        
     } catch (error) {
         console.error('Message sending failed:', error);
         showAlert('Message sending failed: ' + error.message, 'error');
     } finally {
         submitBtn.disabled = false;
-        submitBtn.textContent = 'Send Message';
+        submitBtn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Send Message';
     }
 });
 
-// Load recent messages (placeholder - would come from backend)
-async function loadRecentMessages() {
-    // For now, just show empty state
-    // In production, this would fetch from /doctor/messages endpoint
-    const tbody = document.getElementById('recent-messages-body');
-    tbody.innerHTML = '<tr><td colspan="4" class="text-center">No messages yet</td></tr>';
-}
-
-// Reset form
 function resetForm() {
     document.getElementById('message-form').reset();
 }
 
-// Close success modal
 function closeSuccessModal() {
     document.getElementById('success-modal').style.display = 'none';
 }
 
-// Load data on page load
 document.addEventListener('DOMContentLoaded', () => {
     loadMothers();
-    loadRecentMessages();
+    loadInbox();
+    setInterval(loadInbox, 45000);
 });
 </script>
 {% endblock %}

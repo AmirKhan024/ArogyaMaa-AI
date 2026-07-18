@@ -155,7 +155,7 @@ function renderAssessments() {
                     
                     <div>
                         <h5>AI Risk Summary</h5>
-                        <p><strong>Risk Score:</strong> ${aiEval.risk_score || 'N/A'}/100</p>
+                        <p><strong>Risk Score:</strong> ${aiEval.risk_score != null ? aiEval.risk_score : 'N/A'}/100</p>
                         
                         <!-- 🔧 IMPROVEMENT 2: Handle Confidence gracefully -->
                         ${aiEval.confidence 
@@ -229,20 +229,19 @@ function viewFullDetails(assessmentId) {
                     <div style="background: rgba(30, 58, 95, 0.05); padding: 15px; border-radius: 8px;">
                         <h3 style="margin-top: 0; color: var(--fuji-700);"><i class="fa-solid fa-user"></i> Patient Information</h3>
                         <p><strong>Assessment ID:</strong> ${assessment.assessment_id}</p>
-                        <p><strong>Date:</strong> ${new Date(assessment.date).toLocaleString()}</p>
-                        <p><strong>Gestational Week:</strong> ${assessment.gestational_week} weeks</p>
-                        <p><strong>ASHA Worker:</strong> ${assessment.submitted_by_asha || 'N/A'}</p>
+                        <p><strong>Date:</strong> ${assessment.timestamp ? new Date(assessment.timestamp).toLocaleString() : 'N/A'}</p>
+                        <p><strong>Gestational Week:</strong> ${assessment.gestational_age_weeks != null ? assessment.gestational_age_weeks + ' weeks' : 'N/A'}</p>
+                        <p><strong>ASHA Worker:</strong> ${assessment.asha_name || 'N/A'}</p>
                     </div>
-                    
+
                     <!-- Vitals -->
                     <div style="background: rgba(16, 185, 129, 0.05); padding: 15px; border-radius: 8px;">
                         <h3 style="margin-top: 0; color: #059669;"><i class="fa-solid fa-stethoscope"></i> Vital Signs</h3>
                         <p><strong>BP:</strong> ${assessment.vitals?.bp_systolic || 'N/A'}/${assessment.vitals?.bp_diastolic || 'N/A'} mmHg</p>
                         <p><strong>Heart Rate:</strong> ${assessment.vitals?.heart_rate || 'N/A'} bpm</p>
-                        <p><strong>Hemoglobin:</strong> ${assessment.vitals?.hemoglobin || 'N/A'} g/dL</p>
-                        <p><strong>Glucose:</strong> ${assessment.vitals?.blood_glucose_random || 'N/A'} mg/dL</p>
-                        <p><strong>Weight:</strong> ${assessment.vitals?.weight || 'N/A'} kg</p>
-                        <p><strong>Temperature:</strong> ${assessment.vitals?.temperature || 'N/A'} °F</p>
+                        <p><strong>Hemoglobin:</strong> ${assessment.vitals?.hemoglobin_g_dl ?? assessment.vitals?.hemoglobin ?? 'Not measured'} ${(assessment.vitals?.hemoglobin_g_dl ?? assessment.vitals?.hemoglobin) != null ? 'g/dL' : ''}</p>
+                        <p><strong>Glucose:</strong> ${assessment.vitals?.glucose_mg_dl ?? assessment.vitals?.blood_glucose_random ?? 'Not measured'} ${(assessment.vitals?.glucose_mg_dl ?? assessment.vitals?.blood_glucose_random) != null ? 'mg/dL' : ''}</p>
+                        <p><strong>Weight:</strong> ${assessment.vitals?.weight_kg ?? assessment.vitals?.weight ?? 'Not measured'} ${(assessment.vitals?.weight_kg ?? assessment.vitals?.weight) != null ? 'kg' : ''}</p>
                     </div>
                     
                     <!-- Symptoms -->
@@ -268,13 +267,13 @@ function viewFullDetails(assessmentId) {
                     <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 15px;">
                         <div style="background: white; padding: 12px; border-radius: 6px; text-align: center;">
                             <div style="font-size: 12px; color: #7f8c8d; margin-bottom: 5px;">Risk Level</div>
-                            <div style="font-size: 20px; font-weight: bold; color: ${assessment.ai_evaluation?.risk_level === 'HIGH' || assessment.ai_evaluation?.risk_level === 'CRITICAL' ? '#e74c3c' : assessment.ai_evaluation?.risk_level === 'MODERATE' ? '#f39c12' : '#27ae60'};">
-                                ${assessment.ai_evaluation?.risk_level || 'N/A'}
+                            <div style="font-size: 20px; font-weight: bold; color: ${assessment.ai_evaluation?.risk_category === 'HIGH' || assessment.ai_evaluation?.risk_category === 'CRITICAL' ? '#e74c3c' : assessment.ai_evaluation?.risk_category === 'MODERATE' ? '#f39c12' : '#27ae60'};">
+                                ${assessment.ai_evaluation?.risk_category || 'N/A'}
                             </div>
                         </div>
                         <div style="background: white; padding: 12px; border-radius: 6px; text-align: center;">
                             <div style="font-size: 12px; color: #7f8c8d; margin-bottom: 5px;">Risk Score</div>
-                            <div style="font-size: 20px; font-weight: bold; color: #34495e;">${assessment.ai_evaluation?.risk_score || 'N/A'}/100</div>
+                            <div style="font-size: 20px; font-weight: bold; color: #34495e;">${assessment.ai_evaluation?.risk_score != null ? assessment.ai_evaluation.risk_score : 'N/A'}/100</div>
                         </div>
                         <div style="background: white; padding: 12px; border-radius: 6px; text-align: center;">
                             <div style="font-size: 12px; color: #7f8c8d; margin-bottom: 5px;">Confidence</div>

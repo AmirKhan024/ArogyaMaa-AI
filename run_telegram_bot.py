@@ -339,8 +339,14 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     elif callback_data == 'send_message':
         await show_send_message_prompt(chat_id, query)
     elif callback_data == 'book_appointment':
+        await show_appointment_menu(chat_id, query)
+    elif callback_data == 'appt_book_new':
         from appointment.handler import start_appointment_flow
         await start_appointment_flow(update, context)
+    elif callback_data == 'appt_my_list':
+        await show_my_appointments(chat_id, query)
+    elif callback_data.startswith('appt_cancel:'):
+        await cancel_my_appointment(chat_id, query, callback_data.split(':', 1)[1])
     elif callback_data == 'menu_register':
         await handle_register_button(update, context)
 
@@ -488,10 +494,115 @@ async def show_send_message_prompt(chat_id, query):
     await query.edit_message_text(message, parse_mode='Markdown')
 
 
+# ==================== APPOINTMENT MENU ====================
+
+def _is_en(mother) -> bool:
+    return 'english' in str((mother or {}).get('preferred_language') or '').lower()
+
+
+async def show_appointment_menu(chat_id, query):
+    """📅 button → submenu: view my appointments / book a new one."""
+    mother = mothers_repo.get_by_telegram_chat_id(chat_id) if db is not None else None
+    en = _is_en(mother)
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📋 My appointments" if en else "📋 मेरी अपॉइंटमेंट", callback_data='appt_my_list')],
+        [InlineKeyboardButton("➕ Book new appointment" if en else "➕ नई अपॉइंटमेंट बुक करें", callback_data='appt_book_new')],
+    ])
+    text = ("📅 *Appointments*\n\nWhat would you like to do?" if en
+            else "📅 *अपॉइंटमेंट*\n\nआप क्या करना चाहेंगी?")
+    await query.edit_message_text(text, parse_mode='Markdown', reply_markup=keyboard)
+
+
+_APPT_STATUS_LABELS = {
+    'Pending':     {'en': '🟡 Waiting for doctor', 'hi': '🟡 डॉक्टर की पुष्टि बाकी'},
+    'Confirmed':   {'en': '🟢 Confirmed',           'hi': '🟢 पुष्टि हो गई'},
+    'Rescheduled': {'en': '🔵 Rescheduled',         'hi': '🔵 समय बदला गया'},
+    'Cancelled':   {'en': '🔴 Cancelled',           'hi': '🔴 रद्द'},
+}
+
+
+async def show_my_appointments(chat_id, query):
+    """List the mother's appointments with status; allow cancelling pending ones."""
+    if db is None:
+        await query.edit_message_text("❌ Database connection error.")
+        return
+    from app.repositories import appointments_repo
+    mother = mothers_repo.get_by_telegram_chat_id(chat_id)
+    en = _is_en(mother)
+    appts = appointments_repo.list_by_chat_id(chat_id, limit=5)
+
+    if not appts:
+        text = ("📋 *My appointments*\n\nYou have no appointments yet.\n"
+                "Book one with the button below!" if en else
+                "📋 *मेरी अपॉइंटमेंट*\n\nअभी कोई अपॉइंटमेंट नहीं है।\n"
+                "नीचे बटन से बुक करें!")
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("➕ Book appointment" if en else "➕ अपॉइंटमेंट बुक करें",
+                                 callback_data='appt_book_new')
+        ]])
+        await query.edit_message_text(text, parse_mode='Markdown', reply_markup=keyboard)
+        return
+
+    lang = 'en' if en else 'hi'
+    lines = ["📋 *My appointments*" if en else "📋 *मेरी अपॉइंटमेंट*", ""]
+    buttons = []
+    for a in appts:
+        status = a.get('status', 'Pending')
+        label = _APPT_STATUS_LABELS.get(status, {}).get(lang, status)
+        slot_date = a.get('confirmed_date') or a.get('preferred_date') or '?'
+        slot_time = a.get('confirmed_time') or a.get('preferred_time') or '?'
+        lines.append(f"• {slot_date} {slot_time} — {label}")
+        if a.get('doctor_notes'):
+            lines.append(f"  📝 {a['doctor_notes']}")
+        if status == 'Pending':
+            buttons.append([InlineKeyboardButton(
+                (f"❌ Cancel {slot_date} {slot_time}" if en else f"❌ रद्द करें {slot_date} {slot_time}"),
+                callback_data=f"appt_cancel:{a.get('appointment_id')}")])
+    lines.append("")
+    lines.append("Use /start for the main menu." if en else "मुख्य मेनू के लिए /start दबाएं।")
+    buttons.append([InlineKeyboardButton("➕ Book new" if en else "➕ नई बुकिंग",
+                                         callback_data='appt_book_new')])
+    await query.edit_message_text("\n".join(lines), parse_mode='Markdown',
+                                  reply_markup=InlineKeyboardMarkup(buttons))
+
+
+async def cancel_my_appointment(chat_id, query, appointment_id):
+    """Mother cancels her own pending appointment."""
+    if db is None:
+        await query.edit_message_text("❌ Database connection error.")
+        return
+    from app.repositories import appointments_repo
+    mother = mothers_repo.get_by_telegram_chat_id(chat_id)
+    en = _is_en(mother)
+
+    appt = appointments_repo.get_by_appointment_id(appointment_id)
+    if not appt or str(appt.get('telegram_chat_id')) != str(chat_id):
+        await query.edit_message_text("❌ Appointment not found." if en else "❌ अपॉइंटमेंट नहीं मिली।")
+        return
+
+    appointments_repo.update_status(appointment_id, "Cancelled",
+                                    doctor_notes="Cancelled by patient via Telegram")
+    text = ("✅ Your appointment has been cancelled.\n\nYou can book a new one anytime "
+            "from the 📅 menu. Use /start for the main menu." if en else
+            "✅ आपकी अपॉइंटमेंट रद्द कर दी गई है।\n\nआप 📅 मेनू से कभी भी नई बुकिंग कर "
+            "सकती हैं। मुख्य मेनू के लिए /start दबाएं।")
+    await query.edit_message_text(text)
+
+
 # ==================== AI REGISTRATION HANDLERS ====================
 
+# One lock per chat serializes registration processing. Without it, answering by
+# voice AND text (or a fast double-send) advances the flow twice — duplicated
+# and skipped questions.
+_reg_locks: dict = {}
+
+
+def _get_reg_lock(chat_id) -> asyncio.Lock:
+    return _reg_locks.setdefault(chat_id, asyncio.Lock())
+
+
 async def handle_register_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle 📝 Register button - start AI-driven registration."""
+    """Handle 📝 Register button - start the guided registration."""
     query = update.callback_query
     chat_id = query.message.chat.id
 
@@ -501,19 +612,20 @@ async def handle_register_button(update: Update, context: ContextTypes.DEFAULT_T
 
     # Check if already completed full registration
     mother = mothers_repo.get_by_telegram_chat_id(chat_id)
-    if mother and (mother.get('registration_complete') or (mother.get('extra') or {}).get('registration_complete')):
+    if mother and mother.get('registration_complete'):
         await query.message.reply_text("✅ You are already registered! Use /start to access all features.")
         return
 
     # Get or create registration session
     session = registration_repo.get_session(chat_id)
     if not session:
-        full_name = mother['name'] if mother else (query.from_user.first_name or 'Mother')
+        full_name = mother['name'] if mother else (query.from_user.first_name or None)
         session = {
             "telegram_chat_id": str(chat_id),
-            "full_name": full_name,
             "registration_active": True,
         }
+        if full_name:
+            session["full_name"] = full_name
         registration_repo.update_session_data(chat_id, session)
 
     # Ensure registration is marked active
@@ -521,8 +633,10 @@ async def handle_register_button(update: Update, context: ContextTypes.DEFAULT_T
         registration_repo.update_session_data(chat_id, {"registration_active": True})
         session['registration_active'] = True
 
-    # Get first (or next) question from AI engine
-    _, next_q_text, is_comp, ui_details = reg_engine.provide_next_question(session)
+    # First (or next) question — engine runs off the event loop.
+    _, next_q_text, is_comp, ui_details = await asyncio.to_thread(
+        reg_engine.provide_next_question, session
+    )
 
     if is_comp:
         # Edge case: session was already complete
@@ -534,12 +648,36 @@ async def handle_register_button(update: Update, context: ContextTypes.DEFAULT_T
         next_q_text,
         reply_markup=get_registration_keyboard(ui_details)
     )
-    await send_voice_response(query.message, context, next_q_text, session)
+    await send_voice_response(query.message, context,
+                              ui_details.get('speech_text') or next_q_text, session)
 
 
 async def handle_registration_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Process text/voice/contact input during active AI registration."""
+    """Process text/voice/contact input during active registration (serialized per chat)."""
     chat_id = update.effective_chat.id
+    lock = _get_reg_lock(chat_id)
+
+    # A second message while we're still processing the first would double-advance
+    # the flow — acknowledge once and drop it.
+    if lock.locked():
+        if not context.user_data.get('reg_busy_notified'):
+            context.user_data['reg_busy_notified'] = True
+            await update.message.reply_text("🙏 एक क्षण... / One moment...")
+        return True
+
+    # Ignore re-delivered updates (Telegram retries).
+    if context.user_data.get('last_reg_update_id', -1) >= update.update_id:
+        return True
+    context.user_data['last_reg_update_id'] = update.update_id
+
+    async with lock:
+        try:
+            return await _process_registration_input(update, context, chat_id)
+        finally:
+            context.user_data['reg_busy_notified'] = False
+
+
+async def _process_registration_input(update, context, chat_id):
     session = registration_repo.get_session(chat_id)
 
     if not session or not session.get('registration_active'):
@@ -578,8 +716,10 @@ async def handle_registration_input(update: Update, context: ContextTypes.DEFAUL
     else:
         text_content = update.message.text
 
-    # Run the AI registration engine
-    extracted, next_q_text, is_comp, ui_details = reg_engine.provide_next_question(session, text_content)
+    # Run the registration engine off the event loop (it may call the LLM).
+    extracted, next_q_text, is_comp, ui_details = await asyncio.to_thread(
+        reg_engine.provide_next_question, session, text_content
+    )
 
     # Update session data
     if extracted:
@@ -589,25 +729,22 @@ async def handle_registration_input(update: Update, context: ContextTypes.DEFAUL
     new_session = registration_repo.get_session(chat_id)
 
     if is_comp:
-        # Registration complete
+        # Registration complete — the engine's message includes name/week/next steps.
         _finalize_polling_registration(str(chat_id))
+        context.user_data['reg_completed_at'] = datetime.now(timezone.utc).timestamp()
 
-        user_lang = new_session.get('preferred_language', 'Hindi')
-        if 'English' in str(user_lang):
-            final_msg = "✅ Registration Complete! Your health profile is now active. We will monitor your symptoms and notify your ASHA worker if needed."
-        else:
-            final_msg = "✅ पंजीकरण पूरा हुआ! आपका स्वास्थ्य प्रोफाइल अब सक्रिय है। हम आपके लक्षणों पर नजर रखेंगे और जरूरत पड़ने पर आपकी आशा वर्कर को सूचित करेंगे।"
+        await update.message.reply_text(next_q_text, reply_markup=ReplyKeyboardRemove())
+        await send_voice_response(update.message, context,
+                                  ui_details.get('speech_text') or next_q_text, new_session)
 
-        await update.message.reply_text(final_msg, reply_markup=ReplyKeyboardRemove())
-        await send_voice_response(update.message, context, final_msg, new_session)
-
-        logger.info(f"✅ AI Registration completed for chat_id: {chat_id}")
+        logger.info(f"✅ Registration completed for chat_id: {chat_id}")
     else:
         await update.message.reply_text(
             next_q_text,
             reply_markup=get_registration_keyboard(ui_details)
         )
-        await send_voice_response(update.message, context, next_q_text, new_session)
+        await send_voice_response(update.message, context,
+                                  ui_details.get('speech_text') or next_q_text, new_session)
 
     return True
 
@@ -764,23 +901,77 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Please consult your doctor or ASHA worker for nutrition advice."
             )
     else:
-        # Regular message - save for healthcare team
-        if message_text:
-            message_data = {
-                'mother_id': str(mother['_id']),
-                'mother_name': mother.get('name'),
-                'telegram_chat_id': str(chat_id),
-                'message_type': 'from_mother',
-                'content': message_text,
-                'message': message_text,
-                'read': False,
-            }
-            messages_repo.create(message_data)
+        # A voice note (no text) outside any flow — guide instead of a dead-end ack.
+        if not message_text:
+            lang = _lang_code(mother.get('preferred_language'))
+            # Straggler inputs right after registration completes get a warm nudge,
+            # not a confusing generic ack.
+            completed_at = context.user_data.get('reg_completed_at', 0)
+            if completed_at and datetime.now(timezone.utc).timestamp() - completed_at < 600:
+                if lang == 'en':
+                    await update.message.reply_text(
+                        "💚 Your registration is already complete! Press /start for your "
+                        "health menu, or type a message anytime for your care team."
+                    )
+                else:
+                    await update.message.reply_text(
+                        "💚 आपका पंजीकरण पूरा हो चुका है! /start दबाकर मेनू देखें, या अपनी "
+                        "टीम के लिए कभी भी संदेश लिखें।"
+                    )
+                return
+            if lang == 'en':
+                await update.message.reply_text(
+                    "💚 I can take voice answers during registration and appointment "
+                    "booking. To message your care team, please type it out — or press "
+                    "/start for the menu."
+                )
+            else:
+                await update.message.reply_text(
+                    "💚 पंजीकरण और अपॉइंटमेंट के दौरान आप बोलकर जवाब दे सकती हैं। "
+                    "अपनी टीम को संदेश भेजने के लिए कृपया लिखें — या /start दबाएं।"
+                )
+            return
 
-        await update.message.reply_text(
-            "📨 Message received! Your healthcare team will respond soon.\n\n"
-            "For emergency situations, please call your local health center."
-        )
+        # Regular message — route to the assigned care team so it shows up in the
+        # ASHA and doctor dashboards (unrouted messages are backfilled on assignment).
+        asha_id = mother.get('assigned_asha_id')
+        doctor_id = mother.get('assigned_doctor_id')
+        message_data = {
+            'mother_id': str(mother['_id']),
+            'mother_name': mother.get('name'),
+            'telegram_chat_id': str(chat_id),
+            'message_type': 'from_mother',
+            'sender_name': mother.get('name') or 'Mother',
+            'content': message_text,
+            'message': message_text,
+            'read': False,
+        }
+        if asha_id:
+            message_data['to_asha_id'] = str(asha_id)
+        if doctor_id:
+            message_data['to_doctor_id'] = str(doctor_id)
+        messages_repo.create(message_data)
+
+        lang = _lang_code(mother.get('preferred_language'))
+        if asha_id or doctor_id:
+            reply = (
+                "📨 Message sent to your care team ✅ They will respond soon.\n\n"
+                "For emergencies, please call your local health center."
+            ) if lang == 'en' else (
+                "📨 आपका संदेश आपकी देखभाल टीम को भेज दिया गया ✅ वे जल्द जवाब देंगे।\n\n"
+                "आपातकाल में कृपया अपने स्वास्थ्य केंद्र को फोन करें।"
+            )
+        else:
+            reply = (
+                "📨 Your message is saved. You'll be connected to an ASHA worker and "
+                "doctor soon — they will see it as soon as they are assigned.\n\n"
+                "For emergencies, please call your local health center."
+            ) if lang == 'en' else (
+                "📨 आपका संदेश सुरक्षित है। जल्द ही आपको आशा दीदी और डॉक्टर से जोड़ा "
+                "जाएगा — नियुक्त होते ही वे इसे देख लेंगे।\n\n"
+                "आपातकाल में कृपया अपने स्वास्थ्य केंद्र को फोन करें।"
+            )
+        await update.message.reply_text(reply)
 
 
 # ==================== MAIN ====================

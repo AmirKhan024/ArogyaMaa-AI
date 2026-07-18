@@ -64,36 +64,43 @@ STATE_TO_KEY = {
 }
 
 
-# ─── Hindi voice prompts ──────────────────────────────────────────────────────
+# ─── Bilingual voice prompts (keyed by 'hi' / 'en') ───────────────────────────
 
 STATE_PROMPTS = {
-    APPT_STATES.ASK_NAME: (
-        "कृपया अपना पूरा नाम बताएं।"
-    ),
-    APPT_STATES.ASK_AGE: (
-        "आपकी उम्र क्या है?"
-    ),
-    APPT_STATES.ASK_PHONE: (
-        "आपका मोबाइल नंबर क्या है?"
-    ),
-    APPT_STATES.ASK_DATE: (
-        "आप किस तारीख को अपॉइंटमेंट चाहते हैं? "
-        "जैसे: पंद्रह अगस्त, या कल, या परसों।"
-    ),
-    APPT_STATES.ASK_TIME: (
-        "आप किस समय आना चाहते हैं? "
-        "जैसे: सुबह दस बजे, या दोपहर दो बजे।"
-    ),
-    APPT_STATES.ASK_SYMPTOMS: (
-        "आपको क्या तकलीफ हो रही है? "
-        "कृपया अपने लक्षण बताएं।"
-    ),
+    APPT_STATES.ASK_NAME: {
+        "hi": "कृपया अपना पूरा नाम बताएं।",
+        "en": "Please tell me your full name.",
+    },
+    APPT_STATES.ASK_AGE: {
+        "hi": "आपकी उम्र क्या है?",
+        "en": "How old are you?",
+    },
+    APPT_STATES.ASK_PHONE: {
+        "hi": "आपका मोबाइल नंबर क्या है?",
+        "en": "What is your mobile number?",
+    },
+    APPT_STATES.ASK_DATE: {
+        "hi": "आप किस तारीख को अपॉइंटमेंट चाहते हैं? जैसे: पंद्रह अगस्त, या कल, या परसों।",
+        "en": "Which date would you like for the appointment? For example: 15 August, tomorrow, or day after tomorrow.",
+    },
+    APPT_STATES.ASK_TIME: {
+        "hi": "आप किस समय आना चाहते हैं? जैसे: सुबह दस बजे, या दोपहर दो बजे।",
+        "en": "What time would you like to come? For example: 10 in the morning, or 2 in the afternoon.",
+    },
+    APPT_STATES.ASK_SYMPTOMS: {
+        "hi": "आपको क्या तकलीफ हो रही है? कृपया अपने लक्षण बताएं।",
+        "en": "What troubles are you having? Please describe your symptoms.",
+    },
 }
 
+_FALLBACK_PROMPT = {"hi": "कृपया जानकारी दें।", "en": "Please share the details."}
 
-def get_prompt_for_state(state: int) -> str:
-    """Returns the Hindi voice prompt for the given state."""
-    return STATE_PROMPTS.get(state, "कृपया जानकारी दें।")
+
+def get_prompt_for_state(state: int, lang: str = "hi") -> str:
+    """Returns the voice prompt for the given state in 'hi' or 'en'."""
+    lang = lang if lang in ("hi", "en") else "hi"
+    prompts = STATE_PROMPTS.get(state, _FALLBACK_PROMPT)
+    return prompts.get(lang) or prompts["hi"]
 
 
 def get_state_key(state: int) -> str:

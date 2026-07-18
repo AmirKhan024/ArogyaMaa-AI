@@ -42,9 +42,28 @@ def build_ai_evaluation(langgraph_result: Dict, langsmith_trace_id: Optional[str
     
     # Extract risk stratification result to get risk level and score
     risk_strat = langgraph_result.get("risk_stratification_result", {})
-    risk_level = risk_strat.get("risk_level", "MODERATE")
-    risk_score = risk_strat.get("risk_score", 50)  # NEW: Use actual AI-calculated score!
-    confidence = risk_strat.get("confidence", 0.75)
+    evaluation_method = "langgraph"
+    if risk_strat:
+        risk_level = risk_strat.get("risk_level", "MODERATE")
+        risk_score = risk_strat.get("risk_score", 50)
+        confidence = risk_strat.get("confidence", 0.75)
+    else:
+        # The risk agent failed (e.g. Groq rate limit) but other agents may have
+        # succeeded. Never invent a silent MODERATE/50 — compute the risk from the
+        # deterministic rule-based scorer so the number reflects the actual vitals.
+        from app.ai.fallback import calculate_risk_score_fallback
+        rb = calculate_risk_score_fallback(
+            langgraph_result.get("vitals") or {},
+            langgraph_result.get("symptoms") or [],
+        )
+        risk_level = rb["risk_category"]
+        risk_score = rb["risk_score"]
+        confidence = 0.6  # rule-based, flagged as such
+        evaluation_method = "hybrid_fallback_risk"
+        logger.warning(
+            "[HELPER] risk_stratification missing — using rule-based risk: "
+            f"{risk_level} ({risk_score}/100)"
+        )
     
     # Extract agent outputs
     agent_outputs = {}
@@ -141,6 +160,7 @@ def build_ai_evaluation(langgraph_result: Dict, langsmith_trace_id: Optional[str
         "risk_score": risk_score,  # Use actual AI-calculated score (0-100)
         "risk_category": risk_level,  # Use actual AI risk level
         "confidence": confidence,  # Use actual AI confidence
+        "evaluation_method": evaluation_method,
         "agent_outputs": agent_outputs,
         "recommended_actions": [],  # Will be populated from agents
         "requires_doctor_review": risk_level in ["HIGH", "CRITICAL"],  # Auto-flag urgent cases

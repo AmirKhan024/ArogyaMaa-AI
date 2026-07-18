@@ -32,6 +32,16 @@ def client():
         yield c
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _cleanup():
+    yield
+    # Remove the assessments this module created so demo data stays clean.
+    from app.db import init_db
+    from app.repositories._sql import exec_write
+    init_db()
+    exec_write("delete from assessments where asha_notes = 'offline replay test'", {})
+
+
 @pytest.fixture()
 def asha_and_mother():
     from app.repositories import asha_repo, mothers_repo

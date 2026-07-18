@@ -20,8 +20,10 @@ from . import documents_repo
 from . import messages_repo
 from . import registration_repo
 from . import rag_threads_repo
+from . import appointments_repo
 
 __all__ = [
+    'appointments_repo',
     'mothers_repo',
     'asha_repo',
     'doctors_repo',

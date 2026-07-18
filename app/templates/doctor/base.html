@@ -39,9 +39,13 @@
                     <span class="nav-icon"><i class="fa-solid fa-microchip"></i></span>
                     <span class="nav-text">AI Assistant</span>
                 </a>
+                <a href="{{ url_for('doctor_dashboard.appointments', doctor_id=doctor_id) }}" class="nav-item {% if request.endpoint == 'doctor_dashboard.appointments' %}active{% endif %}">
+                    <span class="nav-icon"><i class="fa-solid fa-calendar-check"></i></span>
+                    <span class="nav-text">Appointments</span>
+                </a>
                 <a href="{{ url_for('doctor_dashboard.message', doctor_id=doctor_id) }}" class="nav-item {% if request.endpoint == 'doctor_dashboard.message' %}active{% endif %}">
                     <span class="nav-icon"><i class="fa-solid fa-envelope-open-text"></i></span>
-                    <span class="nav-text">Send Message</span>
+                    <span class="nav-text">Messages</span>
                 </a>
             </nav>
             

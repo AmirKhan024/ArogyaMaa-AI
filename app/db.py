@@ -92,6 +92,15 @@ def _clean_value(v):
 
 def _map_row(row_mapping) -> dict:
     d = {k: _clean_value(v) for k, v in row_mapping.items()}
+    # Flatten the `extra` JSONB catch-all to top level so fields without a dedicated
+    # column (location, edd, danger_signs, substance_usage, preferred_language, ...)
+    # are readable at the root, matching what callers expect. Real columns always win
+    # on key conflicts; `extra` itself stays available for debugging.
+    extra = d.get("extra")
+    if isinstance(extra, dict) and extra:
+        for k, v in extra.items():
+            if d.get(k) is None:  # real columns win only when they hold a value
+                d[k] = _clean_value(v)
     # Alias the PK to a string '_id' for back-compat with the old pymongo code.
     if "id" in d and "_id" not in d:
         d["_id"] = str(d["id"])

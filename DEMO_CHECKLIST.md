@@ -14,54 +14,73 @@ cannot message itself.
    venv\Scripts\python.exe run_telegram_bot.py   # bot  -> @arogyamaa_ai_bot + webhook :5050
    ```
 3. Logins: `admin / admin123`, `doctor / doctor123`, `asha / asha123`.
+4. Optional but impressive: put YOUR Telegram chat id on the demo doctor/ASHA
+   (Admin → Doctor Panel / ASHA Network → the Telegram Chat ID field, get yours from
+   @userinfobot) — then risk alerts also arrive on your phone as the "doctor".
 
 ## Telegram (needs your phone) — walk this once
 
 Bot: **@arogyamaa_ai_bot**
 
-- [ ] `/start` → welcome + 7-button menu appears
-- [ ] **📝 Register** → answer the questions; try BOTH typing and voice notes
-      (each question also arrives as a voice reply — that's Edge-TTS)
-- [ ] Speak one answer in English — transcription should stay English (auto-detect)
-- [ ] Finish registration → "Registration Complete" confirmation
-- [ ] `/start` again → "Welcome back" (recognized as registered)
-- [ ] `/status` → profile summary
-- [ ] **🩺 Health Summary** → shows latest assessment (submit one from the ASHA
-      dashboard first if empty)
-- [ ] **📄 Upload Documents** → then send a photo of any lab report / prescription →
-      "Analyzing document..." → success message; it appears in Doctor → Documents
-- [ ] **👩‍⚕️ Doctor Messages** → shows messages (send one from Doctor → Send Message first)
-- [ ] **💬 Send Message** → type something → shows up in doctor dashboard
-- [ ] Type "what should I eat for dinner?" → personalized AI nutrition advice
-- [ ] **📅 Appointment** → book by voice (Hindi works best) → date, time, symptoms →
-      confirmation message
-- [ ] Check **amirnasirkhan25@gmail.com** → doctor email with Confirm / Reschedule buttons
-- [ ] Click **Confirm** → success page → your phone gets the Telegram confirmation
-- [ ] Book another appointment → click **Reschedule** in the email → pick new date/time →
-      phone gets the reschedule notification
+### Registration (redesigned: ~12 steps, grouped, with progress)
+- [ ] `/start` → welcome + menu → **📝 Register**
+- [ ] Choose **English** (or हिंदी — everything follows your choice)
+- [ ] Each question shows **🌸 Step x/y** progress + arrives as text AND a voice note
+- [ ] Answer the grouped questions naturally by voice — e.g. for "tell me about
+      yourself": *"Sunita, 15 June 1998, Rampur"* (one answer fills name+DOB+village)
+- [ ] For pregnancy dates say just ONE thing (e.g. *"about 10 weeks"*) — EDD and LMP
+      are computed automatically
+- [ ] Say *"none"* to the medical-background question — all four sub-fields fill as No
+- [ ] Try answering by voice AND typing at the same time — the bot politely says
+      "One moment 🙏" and NEVER duplicates or skips questions
+- [ ] Final **summary card** shows everything → tap **✏️ Something is wrong** → say
+      *"my village is Sitapur"* → summary updates → **✅ Yes, I agree**
+- [ ] Completion message includes what happens next (no more talking-to-a-wall)
 
-> For alerts to reach the mother, her profile must carry YOUR chat id — registering
-> via /start from your phone does this automatically.
+### After registration
+- [ ] Admin dashboard → Maternal Portfolio → your name shows **TELEGRAM** badge →
+      **Assign** an ASHA + doctor to yourself
+- [ ] ASHA/doctor dashboards → patient profile now shows your real answers
+      (village, EDD, week, substance use under "Lifestyle & Safety")
 
-## Web (already auto-verified, worth showing)
+### Messages (now two-way)
+- [ ] Bot: **💬 Send Message** → type something → reply says "sent to your care team ✅"
+- [ ] Doctor dashboard → **Messages** → your message is in the Inbox with a NEW badge →
+      **Reply** → it arrives on your phone instantly
+- [ ] ASHA dashboard → Notifications → same message with "Message from Mother" badge
 
-- [ ] Login page → sign in as **asha**
-- [ ] New Assessment → pick Anjali Singh → BP 165/112, HR 108, Hb 6.8, symptoms:
-      severe headache + vision changes → Submit → **CRITICAL risk score** from the
-      LangGraph AI pipeline
-- [ ] **Offline demo:** DevTools → Network → Offline → submit another assessment →
-      "saved offline" + pending-sync chip → go back Online → watch it sync (idempotent —
-      re-syncs never duplicate)
-- [ ] AI Assistant (RAG chatbot) → ask "danger signs during pregnancy" → cited answer
-- [ ] Login as **doctor** → review the critical assessment, AI Case Assistant → Analyze
-- [ ] Login as **admin** → analytics now show the risk distribution + trend
+### Appointments (full loop)
+- [ ] Bot: **📅 Appointment** → **➕ Book new** → answer date/time/symptoms by voice
+      (prompts follow your language now)
+- [ ] **📅 → 📋 My appointments** → see it as 🟡 Waiting for doctor (+ Cancel button)
+- [ ] Doctor dashboard → **Appointments** → Confirm / Reschedule / Cancel from the page →
+      your phone gets the notification in your language
+- [ ] The email path still works too: check **amirnasirkhan25@gmail.com** for the
+      confirm/reschedule email on every new booking
+- [ ] After doctor confirms → **📋 My appointments** shows 🟢 Confirmed
+
+### Everything else
+- [ ] **📄 Upload Documents** → send a lab-report photo → AI reads and analyzes it →
+      appears in Doctor → My Patients → Documents
+- [ ] **🩺 Health Summary** → latest assessment + risk (submit one from ASHA first)
+- [ ] Type "what should I eat for dinner?" → personalized nutrition advice
+
+## Web (auto-verified, worth showing)
+
+- [ ] ASHA → New Assessment → BP 165/112, HR 108, Hb 6.8 + severe headache →
+      **CRITICAL risk with a real score** (try BP 87/98 → politely rejected)
+- [ ] **Offline demo:** DevTools → Network → Offline → submit → pending-sync chip →
+      back Online → syncs exactly once
+- [ ] Doctor → Assessments → **View Full Details** → real dates/vitals/AI reasoning
+- [ ] Admin → System Overview → live risk distribution + trend charts
+- [ ] ASHA → AI Assistant → ask "danger signs during pregnancy" → cited answer
 
 ## If something misbehaves
 
 | Symptom | Fix |
 |---|---|
 | App won't start | Supabase paused — open dashboard; check `.env` exists |
-| AI returns "rule-based fallback" | Groq rate limit — wait 60s and retry |
+| AI shows "rule-based" scores | Groq rate limit — normal; the app degrades gracefully |
 | Voice replies missing | `ffmpeg -version` must work in the same terminal |
-| Bot silent | Only ONE bot process may run; kill duplicates |
-| Model id retired | Swap `LLM_MODEL` in `.env` (see console.groq.com/docs/models) |
+| Bot silent | Only ONE bot instance may run; kill duplicates |
+| Model id retired | Swap `LLM_MODEL` in `.env` (console.groq.com/docs/models) |

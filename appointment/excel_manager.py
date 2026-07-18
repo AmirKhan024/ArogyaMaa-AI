@@ -21,6 +21,8 @@ COLUMNS = [
     "patient_age",
     "patient_phone",
     "telegram_chat_id",
+    "mother_id",
+    "preferred_language",
     "preferred_date",
     "preferred_time",
     "symptoms",
@@ -41,7 +43,9 @@ def _ensure_workbook_exists():
 def write_appointment(appointment: dict) -> None:
     """Insert a new appointment row."""
     row = {col: appointment.get(col, "") for col in COLUMNS}
-    insert_row("appointments", row, known_cols=set(COLUMNS))
+    if not row.get("mother_id"):
+        row.pop("mother_id", None)  # uuid column — never insert an empty string
+    insert_row("appointments", row, known_cols=set(COLUMNS), uuid_cols={"mother_id"})
     logger.info(f"[Appointment] Written: {appointment.get('appointment_id')}")
 
 

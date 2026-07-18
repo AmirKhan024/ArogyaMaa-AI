@@ -206,14 +206,21 @@ def health():
 
 # ── Patient Notification Helpers ──────────────────────────────────────────────
 
-def _notify_patient_confirmed(appointment: dict):
-    """Sends a confirmation voice/text to the patient via Telegram."""
-    chat_id = appointment.get("telegram_chat_id")
-    if not chat_id or not _bot_app_ref:
-        logger.warning("[Appointment Webhook] Cannot notify — no chat_id or bot_app_ref")
-        return
+def _appt_is_english(appointment: dict) -> bool:
+    return 'english' in str(appointment.get('preferred_language') or '').lower()
 
-    msg = (
+
+def build_confirmed_message(appointment: dict) -> str:
+    """Patient-facing confirmation text in the language the booking was made in."""
+    if _appt_is_english(appointment):
+        return (
+            f"Hello {appointment.get('patient_name', '')}! "
+            f"Your appointment is confirmed. "
+            f"Date: {appointment.get('confirmed_date', '')}. "
+            f"Time: {appointment.get('confirmed_time', '')}. "
+            "Please arrive on time. Thank you!"
+        )
+    return (
         f"नमस्ते {appointment.get('patient_name', '')} जी! "
         f"आपका अपॉइंटमेंट पुष्टि हो गया है। "
         f"तारीख: {appointment.get('confirmed_date', '')}। "
@@ -221,21 +228,22 @@ def _notify_patient_confirmed(appointment: dict):
         "कृपया समय पर आएं। धन्यवाद!"
     )
 
-    _send_text_to_patient(chat_id, msg)
 
-
-def _notify_patient_rescheduled(appointment: dict):
-    """Sends a reschedule notification to the patient."""
-    chat_id = appointment.get("telegram_chat_id")
-    if not chat_id or not _bot_app_ref:
-        logger.warning("[Appointment Webhook] Cannot notify — no chat_id or bot_app_ref")
-        return
-
-    notes_part = ""
-    if appointment.get("doctor_notes"):
-        notes_part = f"डॉक्टर का संदेश: {appointment['doctor_notes']}। "
-
-    msg = (
+def build_rescheduled_message(appointment: dict) -> str:
+    """Patient-facing reschedule text in the language the booking was made in."""
+    notes = appointment.get("doctor_notes") or ""
+    if _appt_is_english(appointment):
+        notes_part = f"Doctor's note: {notes}. " if notes else ""
+        return (
+            f"Hello {appointment.get('patient_name', '')}! "
+            f"Your appointment has been rescheduled. "
+            f"New date: {appointment.get('confirmed_date', '')}. "
+            f"New time: {appointment.get('confirmed_time', '')}. "
+            f"{notes_part}"
+            "Please come at this time. Thank you!"
+        )
+    notes_part = f"डॉक्टर का संदेश: {notes}। " if notes else ""
+    return (
         f"नमस्ते {appointment.get('patient_name', '')} जी! "
         f"आपकी अपॉइंटमेंट में बदलाव किया गया है। "
         f"नई तारीख: {appointment.get('confirmed_date', '')}। "
@@ -244,7 +252,38 @@ def _notify_patient_rescheduled(appointment: dict):
         "कृपया इस समय पर आएं। धन्यवाद!"
     )
 
-    _send_text_to_patient(chat_id, msg)
+
+def build_cancelled_message(appointment: dict) -> str:
+    """Patient-facing cancellation text."""
+    if _appt_is_english(appointment):
+        return (
+            f"Hello {appointment.get('patient_name', '')}. "
+            "Your appointment request has been cancelled. "
+            "You can book a new one anytime from the 📅 Appointment menu. Thank you!"
+        )
+    return (
+        f"नमस्ते {appointment.get('patient_name', '')} जी। "
+        "आपकी अपॉइंटमेंट रद्द कर दी गई है। "
+        "आप 📅 अपॉइंटमेंट मेनू से कभी भी नई बुकिंग कर सकती हैं। धन्यवाद!"
+    )
+
+
+def _notify_patient_confirmed(appointment: dict):
+    """Sends a confirmation to the patient via Telegram."""
+    chat_id = appointment.get("telegram_chat_id")
+    if not chat_id:
+        logger.warning("[Appointment Webhook] Cannot notify — no chat_id")
+        return
+    _send_text_to_patient(chat_id, build_confirmed_message(appointment))
+
+
+def _notify_patient_rescheduled(appointment: dict):
+    """Sends a reschedule notification to the patient."""
+    chat_id = appointment.get("telegram_chat_id")
+    if not chat_id:
+        logger.warning("[Appointment Webhook] Cannot notify — no chat_id")
+        return
+    _send_text_to_patient(chat_id, build_rescheduled_message(appointment))
 
 
 def _send_text_to_patient(chat_id, text: str):

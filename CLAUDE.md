@@ -122,4 +122,20 @@ ChromaDB from `rag_pdf_source/` PDFs; ~2 min).
   offline replays skip AI + alert side effects. Keep both layers of idempotency.
 - Document analysis (`app/ai/document_analyzer.py`): PDF text layer → OCR → Groq vision
   (`GROQ_VISION_MODEL`, default llama-4-scout). If nothing is readable it returns
-  `success: False` — it must NEVER invent findings.
+  `success: False` — it must NEVER invent findings. Transient 429/5xx → error "AI_BUSY".
+- `app/db.py::_map_row` FLATTENS the mothers `extra` JSONB to top level on read (real
+  columns win when non-null). Registration fields like location/edd/danger_signs/
+  substance_usage/preferred_language are read at the ROOT of the dict — keep it that way.
+- **Registration** (`app/ai/registration/`): question text is FIXED bilingual copy in
+  `questions.py` (REGISTRATION_STEPS, grouped steps); the LLM does extraction ONLY
+  (FAST model, temp 0, escalates to LLM_MODEL when empty). The engine is deterministic/
+  idempotent; the bot serializes per-chat input with `_reg_locks`. Never reintroduce
+  LLM-generated question wording.
+- Every Supabase pooler round-trip costs ~0.5s — NEVER loop per-row repo lookups in a
+  request (N+1). Bulk-fetch once or memoize per-request (see doctor/routes.py,
+  admin/routes.py get_mothers).
+- `graph.invoke` in submit_assessment runs under a 120s hard budget (Groq 429 backoffs
+  can spiral to an hour); on timeout the rule-based fallback scores. Keep the budget.
+- Appointments: table + `appointments_repo` (list/act); `appointment/excel_manager.py` is
+  a legacy-named shim used by the bot flow. Doctor dashboard page + bot "My appointments"
+  submenu both act via `appointments_repo.update_status` and notify via telegram_service.
