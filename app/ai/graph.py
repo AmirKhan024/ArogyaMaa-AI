@@ -52,6 +52,13 @@ def _wrap_node(name, fn):
     output_keys = _NODE_OUTPUT_KEYS[name]
 
     def wrapped(state: ArogyaMaaState):
+        # Parity gate: the old conditional router only ran document analysis
+        # when documents were uploaded. The node itself doesn't check, and
+        # build_ai_evaluation keys off the PRESENCE of document_analysis_result,
+        # so skipping must leave the key unset (not empty).
+        if name == "document_analysis" and not state.get("has_uploaded_documents"):
+            return {"perf_timings": [{"stage": "node:" + name, "ms": 0.0}]}
+
         t0 = time.perf_counter()
         result = fn(dict(state))
         ms = (time.perf_counter() - t0) * 1000
@@ -63,44 +70,24 @@ def _wrap_node(name, fn):
     return wrapped
 
 
-def should_run_symptom_reasoning(state: ArogyaMaaState) -> str:
-    """Conditional edge: Run symptom reasoning if symptoms present"""
-    if "symptom_reasoning" in state.get("agents_invoked", []):
-        return "symptom_reasoning"
-    return "skip_to_trend"
-
-
-def should_run_trend_analysis(state: ArogyaMaaState) -> str:
-    """Conditional edge: Run trend analysis if historical data exists"""
-    if "trend_analysis" in state.get("agents_invoked", []):
-        return "trend_analysis"
-    return "skip_to_document"
-
-
-def should_run_document_analysis(state: ArogyaMaaState) -> str:
-    """Conditional edge: Run document analysis if documents uploaded"""
-    if "document_analysis" in state.get("agents_invoked", []):
-        return "document_analysis"
-    return "nutrition_lifestyle"
-
-
 def create_ArogyaMaa_graph():
     """
     Create the LangGraph workflow for ArogyaMaa AI orchestration.
-    
-    Graph Structure:
-    
-    START → orchestrator → risk_stratification → [conditional]
-                                                      ↓
-                                            symptom_reasoning? → [conditional]
-                                                                      ↓
-                                                            trend_analysis? → [conditional]
-                                                                                  ↓
-                                                                    document_analysis? → nutrition_lifestyle
-                                                                                              ↓
-                                                                                        communication
-                                                                                              ↓
-                                                                                          finalize → END
+
+    Graph Structure (independent agents run concurrently; verified against
+    each node's actual state reads — only nutrition/communication depend on
+    another agent's output, and only on risk_stratification's):
+
+    START → orchestrator ─┬─ risk_stratification ──┐
+                          ├─ symptom_reasoning ────┤   (phase A, parallel)
+                          ├─ trend_analysis ───────┤
+                          └─ document_analysis ────┤
+                                                   ├─┬─ nutrition_lifestyle ─┐  (phase B,
+                                                   │ └─ communication ───────┤   parallel)
+                                                   │                         │
+                                                   └────────── finalize ← ───┘
+                                                                   ↓
+                                                                  END
     """
     # Enable LangSmith tracing
     if os.getenv("LANGCHAIN_TRACING_V2") == "true":
@@ -121,46 +108,21 @@ def create_ArogyaMaa_graph():
     workflow.add_node("communication", _wrap_node("communication", communication_node))
     workflow.add_node("finalize", _wrap_node("finalize", finalize_node))
     
-    # Define edges
+    # Define edges. Phase A nodes read only input fields (mutually
+    # independent); nutrition and communication read only
+    # risk_stratification_result; finalize aggregates everything. The
+    # skipped-node conditions the old routers checked are enforced inside
+    # the nodes themselves (deterministic short-circuits) and, for
+    # document_analysis, by the parity gate in _wrap_node.
+    phase_a = ["risk_stratification", "symptom_reasoning", "trend_analysis", "document_analysis"]
+
     workflow.set_entry_point("orchestrator")
-    workflow.add_edge("orchestrator", "risk_stratification")
-    
-    # Conditional routing: risk_stratification → symptom_reasoning OR skip
-    workflow.add_conditional_edges(
-        "risk_stratification",
-        should_run_symptom_reasoning,
-        {
-            "symptom_reasoning": "symptom_reasoning",
-            "skip_to_trend": "trend_analysis"  # Will check if trend should run
-        }
-    )
-    
-    # Conditional routing: symptom_reasoning → trend_analysis (check)
-    workflow.add_conditional_edges(
-        "symptom_reasoning",
-        should_run_trend_analysis,
-        {
-            "trend_analysis": "trend_analysis",
-            "skip_to_document": "document_analysis"  # Will check if document should run
-        }
-    )
-    
-    # Conditional routing: trend_analysis → document_analysis (check)
-    workflow.add_conditional_edges(
-        "trend_analysis",
-        should_run_document_analysis,
-        {
-            "document_analysis": "document_analysis",
-            "nutrition_lifestyle": "nutrition_lifestyle"
-        }
-    )
-    
-    # document_analysis always goes to nutrition
-    workflow.add_edge("document_analysis", "nutrition_lifestyle")
-    
-    # Final sequential steps
-    workflow.add_edge("nutrition_lifestyle", "communication")
-    workflow.add_edge("communication", "finalize")
+    for node in phase_a:
+        workflow.add_edge("orchestrator", node)          # fan-out: one super-step
+
+    workflow.add_edge(phase_a, "nutrition_lifestyle")    # barrier join
+    workflow.add_edge(phase_a, "communication")          # barrier join
+    workflow.add_edge(["nutrition_lifestyle", "communication"], "finalize")
     workflow.add_edge("finalize", END)
     
     # Compile the graph
