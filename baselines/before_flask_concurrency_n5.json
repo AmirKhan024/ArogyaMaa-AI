@@ -1,0 +1,13 @@
+{
+  "mode": "read",
+  "n": 5,
+  "port": 8000,
+  "wall_s": 5.155,
+  "throughput_rps": 0.97,
+  "p50_s": 4.576,
+  "p95_s": 4.89,
+  "min_s": 4.571,
+  "max_s": 4.89,
+  "ok": 5,
+  "errors": 0
+}

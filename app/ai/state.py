@@ -4,7 +4,8 @@ State Schema for LangGraph
 Defines the state structure that flows through all agent nodes.
 """
 
-from typing import TypedDict, List, Dict, Optional, Literal
+import operator
+from typing import Annotated, TypedDict, List, Dict, Optional, Literal
 
 
 class ArogyaMaaState(TypedDict, total=False):
@@ -42,3 +43,7 @@ class ArogyaMaaState(TypedDict, total=False):
     requires_doctor_review: bool
     agents_invoked: List[str]
     timestamp: str
+
+    # Per-node timing entries; operator.add reducer so nodes running in the
+    # same super-step can each contribute without a channel-write conflict.
+    perf_timings: Annotated[List[Dict], operator.add]

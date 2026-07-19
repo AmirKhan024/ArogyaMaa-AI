@@ -10,7 +10,9 @@ URL Prefix: /asha
 from flask import Blueprint, request, jsonify, current_app
 from datetime import datetime
 from werkzeug.utils import secure_filename
+import json
 import os
+from app.instrumentation import stage, perf_debug_enabled
 from app.repositories import mothers_repo, assessments_repo, asha_repo, documents_repo, messages_repo, doctors_repo
 
 # Try to import AI components, use fallback if unavailable
@@ -280,9 +282,11 @@ def submit_assessment():
         # client-generated UUID so replays after sync never create duplicate rows.
         # If this capture was already ingested, return success WITHOUT re-running the
         # AI pipeline or re-sending alerts (side effects must be idempotent too).
+        timings = []
         client_uuid = data.get('client_uuid')
         if client_uuid:
-            existing_id = assessments_repo.find_id_by_client_uuid(client_uuid)
+            with stage("db:idempotency_lookup", timings):
+                existing_id = assessments_repo.find_id_by_client_uuid(client_uuid)
             if existing_id:
                 current_app.logger.info(
                     f"Assessment replay deduped: client_uuid={client_uuid} -> {existing_id}"
@@ -293,15 +297,17 @@ def submit_assessment():
                 }), 200
             assessment_data['client_uuid'] = client_uuid
 
-        assessment_id = assessments_repo.create(assessment_data)
-        
+        with stage("db:create_assessment", timings):
+            assessment_id = assessments_repo.create(assessment_data)
+
         # Log the assessment
         current_app.logger.info(
             f"Assessment created: {assessment_id} for mother {mother_id} by ASHA {asha_id}"
         )
-        
+
         # Get the created assessment to return details
-        assessment = assessments_repo.get_by_id(assessment_id)
+        with stage("db:get_assessment", timings):
+            assessment = assessments_repo.get_by_id(assessment_id)
         
         # ============================================================
         # CHUNK 8C: AI EVALUATION
@@ -315,7 +321,8 @@ def submit_assessment():
                 current_app.logger.info(f"[AI] Running orchestration for assessment {assessment_id}")
                 
                 # Get historical assessments for trend analysis
-                historical = assessments_repo.list_by_mother(mother_id, limit=10)
+                with stage("db:history_fetch", timings):
+                    historical = assessments_repo.list_by_mother(mother_id, limit=10)
                 # Exclude current assessment from history
                 historical = [h for h in historical if str(h['_id']) != str(assessment_id)]
                 
@@ -333,13 +340,17 @@ def submit_assessment():
                         graph = create_ArogyaMaa_graph()
                         _pool = _cf.ThreadPoolExecutor(max_workers=1)
                         try:
-                            ai_result = _pool.submit(graph.invoke, ai_input).result(timeout=120)
+                            with stage("ai:graph_invoke_total", timings):
+                                ai_result = _pool.submit(graph.invoke, ai_input).result(timeout=120)
                         finally:
                             # wait=False: never block the request on a stuck retry thread
                             _pool.shutdown(wait=False, cancel_futures=True)
 
+                        timings.extend(ai_result.get("perf_timings", []))
+
                         # Transform to ai_evaluation schema
-                        ai_evaluation = build_ai_evaluation(ai_result)
+                        with stage("ai:build_evaluation", timings):
+                            ai_evaluation = build_ai_evaluation(ai_result)
                         current_app.logger.info("[AI] Using LangGraph AI evaluation")
                     else:
                         raise ImportError("LangGraph not available")
@@ -350,7 +361,8 @@ def submit_assessment():
                     ai_evaluation = build_fallback_ai_evaluation(assessment, mother, historical)
                 
                 # Save to database
-                updated = assessments_repo.update_ai_evaluation(assessment_id, ai_evaluation)
+                with stage("db:update_ai_evaluation", timings):
+                    updated = assessments_repo.update_ai_evaluation(assessment_id, ai_evaluation)
                 
                 if updated:
                     ai_evaluation_status = "completed"
@@ -365,13 +377,14 @@ def submit_assessment():
                     try:
                         current_app.logger.info(f"[ALERTS] Triggering alerts for assessment {assessment_id}")
                         
-                        alert_results = send_ai_alerts(
-                            assessment_id=assessment_id,
-                            mother_id=mother_id,
-                            ai_evaluation=ai_evaluation,
-                            mother_data=mother,
-                            asha_data=asha_worker
-                        )
+                        with stage("alerts:send", timings):
+                            alert_results = send_ai_alerts(
+                                assessment_id=assessment_id,
+                                mother_id=mother_id,
+                                ai_evaluation=ai_evaluation,
+                                mother_data=mother,
+                                asha_data=asha_worker
+                            )
                         
                         if alert_results and isinstance(alert_results, dict):
                             mother_status = alert_results.get('mother_alert', {}).get('status', 'unknown') if isinstance(alert_results.get('mother_alert'), dict) else 'unknown'
@@ -460,8 +473,16 @@ def submit_assessment():
                     "recommended_actions": ["AI evaluation failed. Please review manually."]
                 }
         
+        total_ms = round(sum(t["ms"] for t in timings if not t["stage"].startswith("node:")), 1)
+        current_app.logger.info(
+            "[PERF] assessment=%s total_ms=%s breakdown=%s",
+            assessment_id, total_ms, json.dumps(timings)
+        )
+        if perf_debug_enabled():
+            response_data["_timings"] = timings
+
         return jsonify(response_data), 201
-    
+
     except Exception as e:
         current_app.logger.error(f"Error submitting assessment: {e}", exc_info=True)
         return jsonify({

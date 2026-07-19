@@ -6,6 +6,7 @@ Builds the multi-agent orchestration graph for ArogyaMaa.
 
 import os
 import logging
+import time
 from langgraph.graph import StateGraph, END
 from langsmith import Client
 
@@ -23,6 +24,43 @@ from .agents import (
 
 
 logger = logging.getLogger(__name__)
+
+
+# The state keys each node is allowed to publish. Nodes historically mutate the
+# state dict in place and return it whole; the wrapper below narrows that to a
+# per-node delta so nodes can later run in the same super-step without
+# LangGraph raising InvalidUpdateError on multiply-written channels.
+_NODE_OUTPUT_KEYS = {
+    "orchestrator":        ["agents_invoked", "timestamp"],
+    "risk_stratification": ["risk_stratification_result"],
+    "symptom_reasoning":   ["symptom_reasoning_result"],
+    "trend_analysis":      ["trend_analysis_result"],
+    "document_analysis":   ["document_analysis_result"],
+    "nutrition_lifestyle": ["nutrition_lifestyle_result"],
+    "communication":       ["communication_result"],
+    "finalize":            ["final_results", "workflow_complete", "completed_at",
+                            "final_risk_level", "final_risk_score", "final_confidence"],
+}
+
+
+def _wrap_node(name, fn):
+    """Adapt an in-place-mutating agent node to timed, delta-returning form.
+
+    The node gets a shallow copy of the state (parallel siblings must never
+    mutate the same dict), and only its declared output keys are published.
+    """
+    output_keys = _NODE_OUTPUT_KEYS[name]
+
+    def wrapped(state: ArogyaMaaState):
+        t0 = time.perf_counter()
+        result = fn(dict(state))
+        ms = (time.perf_counter() - t0) * 1000
+        update = {k: result[k] for k in output_keys if k in result}
+        update["perf_timings"] = [{"stage": "node:" + name, "ms": round(ms, 1)}]
+        logger.info("[PERF] node=%s ms=%.1f", name, ms)
+        return update
+
+    return wrapped
 
 
 def should_run_symptom_reasoning(state: ArogyaMaaState) -> str:
@@ -73,15 +111,15 @@ def create_ArogyaMaa_graph():
     # Create the graph
     workflow = StateGraph(ArogyaMaaState)
     
-    # Add all nodes
-    workflow.add_node("orchestrator", orchestrator_node)
-    workflow.add_node("risk_stratification", risk_stratification_node)
-    workflow.add_node("symptom_reasoning", symptom_reasoning_node)
-    workflow.add_node("trend_analysis", trend_analysis_node)
-    workflow.add_node("document_analysis", document_analysis_node)
-    workflow.add_node("nutrition_lifestyle", nutrition_lifestyle_node)
-    workflow.add_node("communication", communication_node)
-    workflow.add_node("finalize", finalize_node)
+    # Add all nodes (wrapped: per-node timing + delta-only state updates)
+    workflow.add_node("orchestrator", _wrap_node("orchestrator", orchestrator_node))
+    workflow.add_node("risk_stratification", _wrap_node("risk_stratification", risk_stratification_node))
+    workflow.add_node("symptom_reasoning", _wrap_node("symptom_reasoning", symptom_reasoning_node))
+    workflow.add_node("trend_analysis", _wrap_node("trend_analysis", trend_analysis_node))
+    workflow.add_node("document_analysis", _wrap_node("document_analysis", document_analysis_node))
+    workflow.add_node("nutrition_lifestyle", _wrap_node("nutrition_lifestyle", nutrition_lifestyle_node))
+    workflow.add_node("communication", _wrap_node("communication", communication_node))
+    workflow.add_node("finalize", _wrap_node("finalize", finalize_node))
     
     # Define edges
     workflow.set_entry_point("orchestrator")
