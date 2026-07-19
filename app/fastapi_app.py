@@ -100,14 +100,21 @@ def create_fastapi_app():
 
 def _register_routers(app):
     # Routers are added here as they are ported, lowest-risk first.
-    from app.routers import api, auth, admin, admin_dashboard, asha_dashboard, doctor_dashboard, shared_dashboard
+    from app.routers import (
+        api, auth, admin, admin_dashboard, asha, asha_dashboard,
+        doctor, doctor_ai, doctor_dashboard, rag, shared_dashboard,
+    )
 
     app.include_router(api.router)
     app.include_router(auth.router)
     app.include_router(admin.router)
     app.include_router(admin_dashboard.router)
+    app.include_router(asha.router)
     app.include_router(asha_dashboard.router)
+    app.include_router(doctor.router)
+    app.include_router(doctor_ai.router)
     app.include_router(doctor_dashboard.router)
+    app.include_router(rag.router)
     app.include_router(shared_dashboard.router)
 
 
