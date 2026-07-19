@@ -12,7 +12,7 @@ byte-identical URLs and no template needs editing.
 """
 
 import os
-from urllib.parse import urlencode
+from urllib.parse import urlencode, quote
 
 from fastapi.templating import Jinja2Templates
 
@@ -29,8 +29,20 @@ def init_templating(app):
     templates.env.globals["url_for"] = flask_url_for
 
 
+def _iter_routes(routes):
+    # include_router() keeps routes nested inside router entries on recent
+    # FastAPI versions - walk the whole tree, not just the top level.
+    for route in routes:
+        yield route
+        inner = getattr(route, "original_router", None)  # _IncludedRouter
+        sub = getattr(inner, "routes", None) or getattr(route, "routes", None)
+        if sub:
+            for r in _iter_routes(sub):
+                yield r
+
+
 def _route_by_name(endpoint):
-    for route in _app.routes:
+    for route in _iter_routes(_app.routes):
         if getattr(route, "name", None) == endpoint:
             return route
     raise KeyError("url_for: no route named %r" % endpoint)
@@ -44,10 +56,17 @@ def flask_url_for(endpoint, **values):
     route = _route_by_name(endpoint)
     param_names = getattr(route, "param_convertors", {}).keys()
     path_params = {k: values.pop(k) for k in list(values) if k in param_names}
-    path = _app.url_path_for(endpoint, **path_params)
+    try:
+        path = str(route.url_path_for(endpoint, **path_params))
+    except Exception:
+        # Flask allows empty path params (templates build JS URL prefixes with
+        # url_for(..., mother_id='')); Starlette's convertor asserts non-empty.
+        path = route.path_format.format(
+            **{k: quote(str(v), safe="/:") for k, v in path_params.items()}
+        )
     if values:
         path = path + "?" + urlencode(values)
-    return str(path)
+    return path
 
 
 def render(request, template_name, status_code=200, **context):
