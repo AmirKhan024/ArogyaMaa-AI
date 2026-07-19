@@ -4,9 +4,12 @@ AI-Driven Telegram Alerts
 Send risk-based alerts to mother, ASHA worker, and doctor based on AI evaluation.
 """
 
-from flask import current_app
+import logging
+
 from app.services import telegram_service
 from app.repositories import messages_repo, mothers_repo, asha_repo, doctors_repo
+
+logger = logging.getLogger(__name__)
 
 
 def send_ai_alerts(assessment_id, mother_id, ai_evaluation, mother_data, asha_data):
@@ -29,13 +32,13 @@ def send_ai_alerts(assessment_id, mother_id, ai_evaluation, mother_data, asha_da
         dict: Status of sent messages
     """
     if not ai_evaluation:
-        current_app.logger.warning(f"[ALERTS] No AI evaluation for assessment {assessment_id}")
+        logger.warning(f"[ALERTS] No AI evaluation for assessment {assessment_id}")
         return {"status": "no_ai_evaluation"}
     
     risk_category = ai_evaluation.get('risk_category', 'MODERATE')
     requires_doctor_review = ai_evaluation.get('requires_doctor_review', False)
     
-    current_app.logger.info(
+    logger.info(
         f"[ALERTS] Sending alerts for assessment {assessment_id}: "
         f"Risk={risk_category}, Doctor Review={requires_doctor_review}"
     )
@@ -194,7 +197,7 @@ def _send_to_mother(mother_data, message_text, assessment_id, risk_category):
     telegram_chat_id = mother_data.get('telegram_chat_id')
     
     if not telegram_chat_id:
-        current_app.logger.warning(f"[ALERTS] Mother {mother_id} has no telegram_chat_id")
+        logger.warning(f"[ALERTS] Mother {mother_id} has no telegram_chat_id")
         return {"status": "no_telegram_chat_id"}
     
     result = {"status": "failed", "telegram_sent": False, "logged": False}
@@ -222,12 +225,12 @@ def _send_to_mother(mother_data, message_text, assessment_id, risk_category):
             logged = messages_repo.add_message(mother_id, message_data)
             result["logged"] = logged
             
-            current_app.logger.info(f"[ALERTS] ✓ Sent to mother {mother_id}: {risk_category}")
+            logger.info(f"[ALERTS] ✓ Sent to mother {mother_id}: {risk_category}")
         else:
-            current_app.logger.error(f"[ALERTS] Telegram API error for mother {mother_id}")
+            logger.error(f"[ALERTS] Telegram API error for mother {mother_id}")
     
     except Exception as e:
-        current_app.logger.error(f"[ALERTS] Error sending to mother {mother_id}: {e}", exc_info=True)
+        logger.error(f"[ALERTS] Error sending to mother {mother_id}: {e}", exc_info=True)
     
     return result
 
@@ -261,10 +264,10 @@ def _send_to_asha(asha_data, message_text, mother_data, assessment_id, risk_cate
         })
         result["logged"] = True
     except Exception as e:
-        current_app.logger.error(f"[ALERTS] Failed to log ASHA notification: {e}")
+        logger.error(f"[ALERTS] Failed to log ASHA notification: {e}")
 
     if not telegram_chat_id:
-        current_app.logger.info(f"[ALERTS] ASHA {asha_id} has no telegram_chat_id (dashboard only)")
+        logger.info(f"[ALERTS] ASHA {asha_id} has no telegram_chat_id (dashboard only)")
         result["status"] = "dashboard_only" if result["logged"] else "no_telegram_chat_id"
         return result
 
@@ -275,12 +278,12 @@ def _send_to_asha(asha_data, message_text, mother_data, assessment_id, risk_cate
         if telegram_response and telegram_response.get('ok'):
             result["telegram_sent"] = True
             result["status"] = "sent"
-            current_app.logger.info(f"[ALERTS] ✓ Sent to ASHA {asha_id}: {risk_category}")
+            logger.info(f"[ALERTS] ✓ Sent to ASHA {asha_id}: {risk_category}")
         else:
-            current_app.logger.error(f"[ALERTS] Telegram API error for ASHA {asha_id}")
+            logger.error(f"[ALERTS] Telegram API error for ASHA {asha_id}")
 
     except Exception as e:
-        current_app.logger.error(f"[ALERTS] Error sending to ASHA {asha_id}: {e}", exc_info=True)
+        logger.error(f"[ALERTS] Error sending to ASHA {asha_id}: {e}", exc_info=True)
 
     return result
 
@@ -313,10 +316,10 @@ def _send_to_doctor(doctor_data, message_text, mother_data, assessment_id, risk_
         })
         result["logged"] = True
     except Exception as e:
-        current_app.logger.error(f"[ALERTS] Failed to log doctor notification: {e}")
+        logger.error(f"[ALERTS] Failed to log doctor notification: {e}")
 
     if not telegram_chat_id:
-        current_app.logger.info(f"[ALERTS] Doctor {doctor_id} has no telegram_chat_id (dashboard only)")
+        logger.info(f"[ALERTS] Doctor {doctor_id} has no telegram_chat_id (dashboard only)")
         result["status"] = "dashboard_only" if result["logged"] else "no_telegram_chat_id"
         return result
 
@@ -327,11 +330,11 @@ def _send_to_doctor(doctor_data, message_text, mother_data, assessment_id, risk_
         if telegram_response and telegram_response.get('ok'):
             result["telegram_sent"] = True
             result["status"] = "sent"
-            current_app.logger.info(f"[ALERTS] ✓ Sent to doctor {doctor_id}: {risk_category}")
+            logger.info(f"[ALERTS] ✓ Sent to doctor {doctor_id}: {risk_category}")
         else:
-            current_app.logger.error(f"[ALERTS] Telegram API error for doctor {doctor_id}")
+            logger.error(f"[ALERTS] Telegram API error for doctor {doctor_id}")
     
     except Exception as e:
-        current_app.logger.error(f"[ALERTS] Error sending to doctor {doctor_id}: {e}", exc_info=True)
+        logger.error(f"[ALERTS] Error sending to doctor {doctor_id}: {e}", exc_info=True)
     
     return result

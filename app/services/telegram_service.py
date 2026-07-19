@@ -5,8 +5,18 @@ Core Telegram bot functionality for sending messages and handling interactions.
 Uses python-telegram-bot library for Telegram API integration.
 """
 
+import logging
+import os
+
 import requests
-from flask import current_app
+
+logger = logging.getLogger(__name__)
+
+
+def _bot_token():
+    # Framework-free by design (like email_service.py): used by both the web
+    # app and the bot process, so config comes straight from the environment.
+    return os.getenv('TELEGRAM_BOT_TOKEN')
 
 
 def send_message(chat_id, text, parse_mode='HTML'):
@@ -21,7 +31,7 @@ def send_message(chat_id, text, parse_mode='HTML'):
     Returns:
         dict: Telegram API response or None if failed
     """
-    bot_token = current_app.config['TELEGRAM_BOT_TOKEN']
+    bot_token = _bot_token()
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     
     payload = {
@@ -37,7 +47,7 @@ def send_message(chat_id, text, parse_mode='HTML'):
         response.raise_for_status()
         return response.json()
     except Exception as e:
-        current_app.logger.error(f"Failed to send message to {chat_id}: {e}")
+        logger.error(f"Failed to send message to {chat_id}: {e}")
         return None
 
 
@@ -53,7 +63,7 @@ def send_formatted_message(chat_id, text, reply_markup=None):
     Returns:
         dict: Telegram API response or None if failed
     """
-    bot_token = current_app.config['TELEGRAM_BOT_TOKEN']
+    bot_token = _bot_token()
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     
     payload = {
@@ -70,7 +80,7 @@ def send_formatted_message(chat_id, text, reply_markup=None):
         response.raise_for_status()
         return response.json()
     except Exception as e:
-        current_app.logger.error(f"Failed to send formatted message: {e}")
+        logger.error(f"Failed to send formatted message: {e}")
         return None
 
 
@@ -84,7 +94,7 @@ def get_file_path(file_id):
     Returns:
         str: File path on Telegram servers or None
     """
-    bot_token = current_app.config['TELEGRAM_BOT_TOKEN']
+    bot_token = _bot_token()
     url = f"https://api.telegram.org/bot{bot_token}/getFile"
     
     try:
@@ -96,7 +106,7 @@ def get_file_path(file_id):
             return result['result']['file_path']
         return None
     except Exception as e:
-        current_app.logger.error(f"Failed to get file path: {e}")
+        logger.error(f"Failed to get file path: {e}")
         return None
 
 
@@ -111,7 +121,7 @@ def download_file(file_path, save_path):
     Returns:
         bool: True if downloaded successfully
     """
-    bot_token = current_app.config['TELEGRAM_BOT_TOKEN']
+    bot_token = _bot_token()
     url = f"https://api.telegram.org/file/bot{bot_token}/{file_path}"
     
     try:
@@ -123,7 +133,7 @@ def download_file(file_path, save_path):
         
         return True
     except Exception as e:
-        current_app.logger.error(f"Failed to download file: {e}")
+        logger.error(f"Failed to download file: {e}")
         return False
 
 
@@ -137,7 +147,7 @@ def set_webhook(webhook_url):
     Returns:
         bool: True if webhook set successfully, False otherwise
     """
-    bot_token = current_app.config['TELEGRAM_BOT_TOKEN']
+    bot_token = _bot_token()
     url = f"https://api.telegram.org/bot{bot_token}/setWebhook"
     
     payload = {
@@ -150,13 +160,13 @@ def set_webhook(webhook_url):
         result = response.json()
         
         if result.get('ok'):
-            current_app.logger.info(f"✓ Webhook set: {webhook_url}")
+            logger.info(f"[OK] Webhook set: {webhook_url}")
             return True
         else:
-            current_app.logger.error(f"✗ Webhook failed: {result}")
+            logger.error(f"[FAIL] Webhook failed: {result}")
             return False
     except Exception as e:
-        current_app.logger.error(f"Failed to set webhook: {e}")
+        logger.error(f"Failed to set webhook: {e}")
         return False
 
 
@@ -167,7 +177,7 @@ def get_webhook_info():
     Returns:
         dict: Webhook info or None if failed
     """
-    bot_token = current_app.config['TELEGRAM_BOT_TOKEN']
+    bot_token = _bot_token()
     url = f"https://api.telegram.org/bot{bot_token}/getWebhookInfo"
     
     try:
@@ -175,7 +185,7 @@ def get_webhook_info():
         response.raise_for_status()
         return response.json()
     except Exception as e:
-        current_app.logger.error(f"Failed to get webhook info: {e}")
+        logger.error(f"Failed to get webhook info: {e}")
         return None
 
 
@@ -186,16 +196,16 @@ def delete_webhook():
     Returns:
         bool: True if deleted successfully, False otherwise
     """
-    bot_token = current_app.config['TELEGRAM_BOT_TOKEN']
+    bot_token = _bot_token()
     url = f"https://api.telegram.org/bot{bot_token}/deleteWebhook"
     
     try:
         response = requests.post(url, timeout=10)
         response.raise_for_status()
-        current_app.logger.info("✓ Webhook deleted")
+        logger.info("[OK] Webhook deleted")
         return True
     except Exception as e:
-        current_app.logger.error(f"Failed to delete webhook: {e}")
+        logger.error(f"Failed to delete webhook: {e}")
         return False
 
 
@@ -206,7 +216,7 @@ def get_bot_info():
     Returns:
         dict: Bot information or None if failed
     """
-    bot_token = current_app.config['TELEGRAM_BOT_TOKEN']
+    bot_token = _bot_token()
     url = f"https://api.telegram.org/bot{bot_token}/getMe"
 
     try:
@@ -214,7 +224,7 @@ def get_bot_info():
         response.raise_for_status()
         return response.json()
     except Exception as e:
-        current_app.logger.error(f"Failed to get bot info: {e}")
+        logger.error(f"Failed to get bot info: {e}")
         return None
 
 
@@ -229,7 +239,7 @@ def send_voice(chat_id, voice_file_path):
     Returns:
         dict: Telegram API response or None if failed
     """
-    bot_token = current_app.config['TELEGRAM_BOT_TOKEN']
+    bot_token = _bot_token()
     url = f"https://api.telegram.org/bot{bot_token}/sendVoice"
 
     try:
@@ -243,7 +253,7 @@ def send_voice(chat_id, voice_file_path):
         response.raise_for_status()
         return response.json()
     except Exception as e:
-        current_app.logger.error(f"Failed to send voice to {chat_id}: {e}")
+        logger.error(f"Failed to send voice to {chat_id}: {e}")
         return None
 
 
@@ -258,7 +268,7 @@ def answer_callback_query(callback_query_id, text=None):
     Returns:
         dict: Telegram API response or None if failed
     """
-    bot_token = current_app.config['TELEGRAM_BOT_TOKEN']
+    bot_token = _bot_token()
     url = f"https://api.telegram.org/bot{bot_token}/answerCallbackQuery"
 
     payload = {'callback_query_id': callback_query_id}
@@ -270,7 +280,7 @@ def answer_callback_query(callback_query_id, text=None):
         response.raise_for_status()
         return response.json()
     except Exception as e:
-        current_app.logger.error(f"Failed to answer callback query: {e}")
+        logger.error(f"Failed to answer callback query: {e}")
         return None
 
 
@@ -287,7 +297,7 @@ def send_message_with_keyboard(chat_id, text, reply_markup, parse_mode=None):
     Returns:
         dict: Telegram API response or None if failed
     """
-    bot_token = current_app.config['TELEGRAM_BOT_TOKEN']
+    bot_token = _bot_token()
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
 
     payload = {
@@ -305,5 +315,5 @@ def send_message_with_keyboard(chat_id, text, reply_markup, parse_mode=None):
         response.raise_for_status()
         return response.json()
     except Exception as e:
-        current_app.logger.error(f"Failed to send message with keyboard: {e}")
+        logger.error(f"Failed to send message with keyboard: {e}")
         return None
