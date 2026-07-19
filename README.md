@@ -333,8 +333,9 @@ psql "$DATABASE_URL" -f db/schema.sql     # or paste db/schema.sql into the Supa
 python db/seed.py                         # seeds demo doctor/asha/mothers; prints credentials
 python -m app.rag.knowledge_ingestion     # build the local RAG vector DB (first run only)
 
-python run.py                           # Flask web server  → http://localhost:8000
+python run_fastapi.py                   # FastAPI web server (uvicorn) → http://localhost:8000
 python run_telegram_bot.py              # Telegram bot (separate terminal)
+# legacy rollback path: python run.py  (Flask, same routes; see MIGRATION_NOTES.md)
 ```
 
 Demo credentials after seeding: `doctor / doctor123`, `asha / asha123` (admin via `ADMIN_PASSWORD` in dev). Dashboards open at `http://localhost:8000`.

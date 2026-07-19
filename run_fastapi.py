@@ -2,8 +2,8 @@
 ArogyaMaa web app — FastAPI/uvicorn entry point.
 
 Local (Windows) dev:
-    python run_fastapi.py                  # port 8001 during migration
-    FASTAPI_PORT=8000 python run_fastapi.py  # after cutover
+    python run_fastapi.py                    # port 8000 (the main web app)
+    FASTAPI_PORT=8001 python run_fastapi.py  # side-by-side with legacy Flask
 
 Notes for Windows: gunicorn is fork-based and does not run here. Multiple
 uvicorn workers use spawn — each worker builds its own DB engine (pool x
@@ -22,7 +22,7 @@ from app.web_settings import settings
 
 
 def main():
-    port = int(os.getenv("FASTAPI_PORT", 8001))
+    port = int(os.getenv("FASTAPI_PORT", 8000))
     workers = int(os.getenv("WEB_CONCURRENCY", 1))
     print("Starting ArogyaMaa (FastAPI) on %s:%d (workers=%d)" % (settings.HOST, port, workers))
     uvicorn.run(

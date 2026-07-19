@@ -1,0 +1,152 @@
+{
+  "label": "after_fastapi_parallel",
+  "port": 8001,
+  "results": [
+    {
+      "run": 1,
+      "wall_s": 77.618,
+      "status": 201,
+      "ai_evaluation_status": "completed",
+      "evaluation_method": "langgraph",
+      "timings": [
+        {
+          "stage": "db:idempotency_lookup",
+          "ms": 900.0
+        },
+        {
+          "stage": "db:create_assessment",
+          "ms": 1671.2
+        },
+        {
+          "stage": "db:get_assessment",
+          "ms": 556.7
+        },
+        {
+          "stage": "db:history_fetch",
+          "ms": 1108.3
+        },
+        {
+          "stage": "ai:graph_invoke_total",
+          "ms": 69647.8
+        },
+        {
+          "stage": "node:orchestrator",
+          "ms": 0.3
+        },
+        {
+          "stage": "node:document_analysis",
+          "ms": 0.0
+        },
+        {
+          "stage": "node:risk_stratification",
+          "ms": 2019.4
+        },
+        {
+          "stage": "node:symptom_reasoning",
+          "ms": 2020.4
+        },
+        {
+          "stage": "node:trend_analysis",
+          "ms": 0.6
+        },
+        {
+          "stage": "node:communication",
+          "ms": 35133.0
+        },
+        {
+          "stage": "node:nutrition_lifestyle",
+          "ms": 67605.3
+        },
+        {
+          "stage": "node:finalize",
+          "ms": 0.3
+        },
+        {
+          "stage": "ai:build_evaluation",
+          "ms": 0.5
+        },
+        {
+          "stage": "db:update_ai_evaluation",
+          "ms": 916.9
+        },
+        {
+          "stage": "alerts:send",
+          "ms": 921.9
+        }
+      ]
+    },
+    {
+      "run": 2,
+      "wall_s": 30.579,
+      "status": 201,
+      "ai_evaluation_status": "completed",
+      "evaluation_method": "langgraph",
+      "timings": [
+        {
+          "stage": "db:idempotency_lookup",
+          "ms": 562.0
+        },
+        {
+          "stage": "db:create_assessment",
+          "ms": 1681.0
+        },
+        {
+          "stage": "db:get_assessment",
+          "ms": 567.2
+        },
+        {
+          "stage": "db:history_fetch",
+          "ms": 1240.5
+        },
+        {
+          "stage": "ai:graph_invoke_total",
+          "ms": 22971.1
+        },
+        {
+          "stage": "node:orchestrator",
+          "ms": 0.7
+        },
+        {
+          "stage": "node:document_analysis",
+          "ms": 0.0
+        },
+        {
+          "stage": "node:risk_stratification",
+          "ms": 17052.0
+        },
+        {
+          "stage": "node:symptom_reasoning",
+          "ms": 1832.8
+        },
+        {
+          "stage": "node:trend_analysis",
+          "ms": 0.9
+        },
+        {
+          "stage": "node:communication",
+          "ms": 5900.7
+        },
+        {
+          "stage": "node:nutrition_lifestyle",
+          "ms": 2010.5
+        },
+        {
+          "stage": "node:finalize",
+          "ms": 0.3
+        },
+        {
+          "stage": "ai:build_evaluation",
+          "ms": 1.0
+        },
+        {
+          "stage": "db:update_ai_evaluation",
+          "ms": 566.6
+        },
+        {
+          "stage": "alerts:send",
+          "ms": 1147.9
+        }
+      ]
+    }
+  ]
+}

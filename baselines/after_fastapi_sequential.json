@@ -1,0 +1,75 @@
+{
+  "label": "after_fastapi_sequential",
+  "port": 8001,
+  "results": [
+    {
+      "run": 1,
+      "wall_s": 44.341,
+      "status": 201,
+      "ai_evaluation_status": "completed",
+      "evaluation_method": "langgraph",
+      "timings": [
+        {
+          "stage": "db:idempotency_lookup",
+          "ms": 570.9
+        },
+        {
+          "stage": "db:create_assessment",
+          "ms": 1718.4
+        },
+        {
+          "stage": "db:get_assessment",
+          "ms": 949.4
+        },
+        {
+          "stage": "db:history_fetch",
+          "ms": 1455.2
+        },
+        {
+          "stage": "ai:graph_invoke_total",
+          "ms": 36147.9
+        },
+        {
+          "stage": "node:orchestrator",
+          "ms": 0.1
+        },
+        {
+          "stage": "node:risk_stratification",
+          "ms": 1941.1
+        },
+        {
+          "stage": "node:symptom_reasoning",
+          "ms": 14841.0
+        },
+        {
+          "stage": "node:trend_analysis",
+          "ms": 0.1
+        },
+        {
+          "stage": "node:nutrition_lifestyle",
+          "ms": 10037.4
+        },
+        {
+          "stage": "node:communication",
+          "ms": 9320.1
+        },
+        {
+          "stage": "node:finalize",
+          "ms": 0.3
+        },
+        {
+          "stage": "ai:build_evaluation",
+          "ms": 0.9
+        },
+        {
+          "stage": "db:update_ai_evaluation",
+          "ms": 707.8
+        },
+        {
+          "stage": "alerts:send",
+          "ms": 728.8
+        }
+      ]
+    }
+  ]
+}

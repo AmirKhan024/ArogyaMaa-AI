@@ -36,8 +36,11 @@ voice-first Telegram bot for mothers. Being transformed to run **100% free-tier*
   (STT) + `appointment/tts_sender.py` (TTS).
 - **RAG:** ChromaDB + local sentence-transformers embeddings (`app/rag/`). Local & free — do
   not migrate to Supabase.
-- **Two processes:** `run.py` (Flask web, port 8000) and `run_telegram_bot.py` (bot, polling;
-  also starts the appointment webhook on port 5050). Both call `app.db.init_db()`.
+- **Two processes:** `run_fastapi.py` (FastAPI web via uvicorn, port 8000; endpoints are
+  plain `def` on purpose — FastAPI's threadpool runs the sync repos/Groq calls) and
+  `run_telegram_bot.py` (bot, polling; also starts the Flask appointment webhook on port
+  5050 — that mini-app stays Flask). Both call `app.db.init_db()`. `run.py` (legacy Flask
+  web, same routes) remains the rollback path until post-phone-test cleanup.
 
 ## Repository conventions (IMPORTANT — preserve these)
 
@@ -76,9 +79,16 @@ pip install -r requirements.txt
 cp .env.example .env          # fill SECRET_KEY, DATABASE_URL, GROQ_API_KEY, TELEGRAM_BOT_TOKEN, INTERNAL_API_TOKEN
 psql "$DATABASE_URL" -f db/schema.sql   # or run db/schema.sql in the Supabase SQL editor
 python db/seed.py             # seeds demo doctor/asha/mothers, prints credentials
-python run.py                 # Flask web (port 8000)
+python run_fastapi.py         # FastAPI web via uvicorn (port 8000; FASTAPI_PORT to override)
 python run_telegram_bot.py    # Telegram bot (separate terminal)
+# python run.py               # legacy Flask entry — kept as the rollback path until cleanup
 ```
+
+The web app is FastAPI (`app/fastapi_app.py` + `app/routers/*`, port 8000). The legacy
+Flask app (`app/__init__.py` + `app/blueprints/*`) still runs and serves the identical
+surface — it is the rollback path; behavior parity is enforced by
+`scripts/diff_responses.py` (Flask on 8000, FastAPI on 8001, byte-diff). See
+MIGRATION_NOTES.md for the before/after latency numbers and the parallelized agent graph.
 
 Demo creds after seeding: `doctor/doctor123`, `asha/asha123`, admin via `ADMIN_PASSWORD`.
 
@@ -94,7 +104,13 @@ ChromaDB from `rag_pdf_source/` PDFs; ~2 min).
   errors per role).
 - Email smoke: `python scripts/send_test_email.py` (real Brevo send to DOCTOR_EMAIL).
 - Quick DB-agnostic check: point `DATABASE_URL` at a throwaway local Postgres, apply
-  `db/schema.sql`, run `db/seed.py`, then `python run.py`.
+  `db/schema.sql`, run `db/seed.py`, then `python run_fastapi.py`.
+- Flask/FastAPI parity: with Flask on 8000 (`python run.py`) and FastAPI on 8001
+  (`FASTAPI_PORT=8001 python run_fastapi.py`), `python scripts/diff_responses.py` must be
+  all green — it byte-diffs every endpoint between the two apps.
+- Latency: `PERF_DEBUG=true` on the server + `python scripts/measure_latency.py --port 8000
+  --label <name>` prints the per-stage breakdown; `python scripts/concurrency_test.py --n 10`
+  probes throughput/p95 and DB-pool behavior. Baselines live in `baselines/`.
 - Env-only smoke: booting the app requires `SECRET_KEY` + `DATABASE_URL`; AI/voice need
   `GROQ_API_KEY`; killing `GROQ_API_KEY` must fall back to the rule-based scorer, not crash.
 
