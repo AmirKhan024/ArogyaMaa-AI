@@ -42,3 +42,6 @@ Thumbs.db
 
 # E2E screenshot output
 e2e/screens*/
+
+# Local-only architecture notes
+entire_code_structure.md
